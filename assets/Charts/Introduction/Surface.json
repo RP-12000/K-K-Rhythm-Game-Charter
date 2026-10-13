@@ -1,0 +1,2006 @@
+{
+  "title" : "Introduction",
+  "level" : "Surface",
+  "chartConstant" : "1.0",
+  "bpm" : 120.0,
+  "artist" : "Suno",
+  "illustrator" : "Unknown",
+  "charter" : "Kelvinizer",
+  "notes" : [ {
+    "type" : "tap",
+    "lane" : 7,
+    "appearance" : 74.0,
+    "judgement" : 76.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 74.0,
+      "endTime" : 76.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 76.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 76.0,
+    "judgement" : 78.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 76.0,
+      "endTime" : 78.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 78.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 2,
+    "appearance" : 78.0,
+    "judgement" : 80.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 78.0,
+      "endTime" : 80.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 80.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 82.0,
+    "judgement" : 84.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 82.0,
+      "endTime" : 84.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 84.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 5,
+    "appearance" : 84.0,
+    "judgement" : 86.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 84.0,
+      "endTime" : 86.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 86.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 1,
+    "appearance" : 86.0,
+    "judgement" : 88.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 86.0,
+      "endTime" : 88.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 88.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 5,
+    "appearance" : 94.0,
+    "judgement" : 96.0,
+    "duration" : 2.0,
+    "height" : 800.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 94.0,
+      "endTime" : 96.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 98.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 4,
+    "appearance" : 98.0,
+    "judgement" : 100.0,
+    "duration" : 1.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 98.0,
+      "endTime" : 100.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 101.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 3,
+    "appearance" : 100.0,
+    "judgement" : 102.0,
+    "duration" : 1.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 100.0,
+      "endTime" : 102.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 103.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 17,
+    "appearance" : 106.0,
+    "judgement" : 108.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 106.0,
+      "endTime" : 108.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 108.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 108.0,
+    "judgement" : 110.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 108.0,
+      "endTime" : 110.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 110.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 12,
+    "appearance" : 110.0,
+    "judgement" : 112.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 110.0,
+      "endTime" : 112.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 112.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 15,
+    "appearance" : 114.0,
+    "judgement" : 116.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 114.0,
+      "endTime" : 116.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 116.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 116.0,
+    "judgement" : 118.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 116.0,
+      "endTime" : 118.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 118.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 11,
+    "appearance" : 118.0,
+    "judgement" : 120.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 118.0,
+      "endTime" : 120.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 120.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 2,
+    "appearance" : 102.0,
+    "judgement" : 104.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 102.0,
+      "endTime" : 104.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 104.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 15,
+    "appearance" : 126.0,
+    "judgement" : 128.0,
+    "duration" : 2.0,
+    "height" : 800.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 126.0,
+      "endTime" : 128.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 130.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 16,
+    "appearance" : 130.0,
+    "judgement" : 132.0,
+    "duration" : 1.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 130.0,
+      "endTime" : 132.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 133.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 11,
+    "appearance" : 132.0,
+    "judgement" : 134.0,
+    "duration" : 1.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 132.0,
+      "endTime" : 134.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 135.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 150.0,
+    "judgement" : 152.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 150.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 152.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 152.0,
+    "judgement" : 154.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 152.0,
+      "endTime" : 154.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 154.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 154.0,
+    "judgement" : 156.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 154.0,
+      "endTime" : 156.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 156.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 156.0,
+    "judgement" : 158.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 156.0,
+      "endTime" : 158.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 158.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 158.0,
+    "judgement" : 160.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 158.0,
+      "endTime" : 160.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 160.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 160.0,
+    "judgement" : 162.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 160.0,
+      "endTime" : 162.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 162.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 162.0,
+    "judgement" : 164.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 162.0,
+      "endTime" : 164.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 164.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 164.0,
+    "judgement" : 166.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 164.0,
+      "endTime" : 166.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 166.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 166.0,
+    "judgement" : 168.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 166.0,
+      "endTime" : 168.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 168.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 168.0,
+    "judgement" : 170.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 168.0,
+      "endTime" : 170.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 170.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 170.0,
+    "judgement" : 172.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 170.0,
+      "endTime" : 172.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 172.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 172.0,
+    "judgement" : 174.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 172.0,
+      "endTime" : 174.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 174.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 174.0,
+    "judgement" : 176.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 174.0,
+      "endTime" : 176.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 176.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 176.0,
+    "judgement" : 178.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 176.0,
+      "endTime" : 178.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 178.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 178.0,
+    "judgement" : 180.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 178.0,
+      "endTime" : 180.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 180.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 180.0,
+    "judgement" : 182.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 180.0,
+      "endTime" : 182.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 182.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 2,
+    "appearance" : 136.0,
+    "judgement" : 200.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 149.0,
+      "exponent" : 1.0,
+      "initialVal" : 792.0,
+      "finalVal" : 792.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 198.0,
+      "endTime" : 200.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 200.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 4,
+    "appearance" : 136.0,
+    "judgement" : 186.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 151.5,
+      "exponent" : 1.0,
+      "initialVal" : 72.0,
+      "finalVal" : 72.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 184.0,
+      "endTime" : 186.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 186.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 7,
+    "appearance" : 136.0,
+    "judgement" : 200.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 149.0,
+      "exponent" : 1.0,
+      "initialVal" : 792.0,
+      "finalVal" : 792.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 198.0,
+      "endTime" : 200.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 200.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 5,
+    "appearance" : 136.0,
+    "judgement" : 190.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 151.5,
+      "exponent" : 1.0,
+      "initialVal" : 72.0,
+      "finalVal" : 72.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 188.0,
+      "endTime" : 190.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 190.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 11,
+    "appearance" : 136.0,
+    "judgement" : 192.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 149.5,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 190.0,
+      "endTime" : 192.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 192.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 136.0,
+    "judgement" : 194.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 148.5,
+      "exponent" : 1.0,
+      "initialVal" : 72.0,
+      "finalVal" : 72.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 192.0,
+      "endTime" : 194.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 194.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 18,
+    "appearance" : 136.0,
+    "judgement" : 196.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 149.5,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 194.0,
+      "endTime" : 196.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 196.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 136.0,
+    "judgement" : 198.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 148.5,
+      "exponent" : 1.0,
+      "initialVal" : 72.0,
+      "finalVal" : 72.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 196.0,
+      "endTime" : 198.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 198.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 2,
+    "appearance" : 136.0,
+    "judgement" : 184.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 150.5,
+      "exponent" : 1.0,
+      "initialVal" : 360.0,
+      "finalVal" : 360.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 182.0,
+      "endTime" : 184.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 184.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 7,
+    "appearance" : 136.0,
+    "judgement" : 188.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 150.5,
+      "exponent" : 1.0,
+      "initialVal" : 360.0,
+      "finalVal" : 360.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 186.0,
+      "endTime" : 188.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 188.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 136.0,
+    "judgement" : 202.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 151.0,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 200.0,
+      "endTime" : 202.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 202.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 136.0,
+    "judgement" : 202.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 151.0,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 200.0,
+      "endTime" : 202.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 202.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 14,
+    "appearance" : 136.0,
+    "judgement" : 204.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 148.0,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 202.0,
+      "endTime" : 204.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 204.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 15,
+    "appearance" : 136.0,
+    "judgement" : 204.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 148.0,
+      "exponent" : 1.0,
+      "initialVal" : 216.0,
+      "finalVal" : 216.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 202.0,
+      "endTime" : 204.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 204.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 11,
+    "appearance" : 136.0,
+    "judgement" : 206.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : -33.55731,
+      "finalVal" : -33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 150.0,
+      "exponent" : 1.0,
+      "initialVal" : 360.0,
+      "finalVal" : 360.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 204.0,
+      "endTime" : 206.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 206.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 1,
+    "appearance" : 206.0,
+    "judgement" : 208.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 206.0,
+      "endTime" : 208.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 208.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 18,
+    "appearance" : 206.0,
+    "judgement" : 208.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 206.0,
+      "endTime" : 208.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 208.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 208.0,
+    "judgement" : 210.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 208.0,
+      "endTime" : 210.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 210.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 208.0,
+    "judgement" : 210.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 208.0,
+      "endTime" : 210.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 210.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 14,
+    "appearance" : 210.0,
+    "judgement" : 212.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 210.0,
+      "endTime" : 212.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 212.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 5,
+    "appearance" : 210.0,
+    "judgement" : 212.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 210.0,
+      "endTime" : 212.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 212.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 12,
+    "appearance" : 212.0,
+    "judgement" : 214.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 212.0,
+      "endTime" : 214.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 214.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 7,
+    "appearance" : 212.0,
+    "judgement" : 214.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 212.0,
+      "endTime" : 214.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 214.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 4,
+    "appearance" : 214.0,
+    "judgement" : 216.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 214.0,
+      "endTime" : 216.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 222.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 5,
+    "appearance" : 214.0,
+    "judgement" : 216.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 214.0,
+      "endTime" : 216.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 222.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 6,
+    "appearance" : 218.0,
+    "judgement" : 220.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 218.0,
+      "endTime" : 220.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 220.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 3,
+    "appearance" : 220.0,
+    "judgement" : 222.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 220.0,
+      "endTime" : 222.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 222.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 14,
+    "appearance" : 221.85916,
+    "judgement" : 223.85916,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 221.85916,
+      "endTime" : 223.85916,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 229.85916,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 15,
+    "appearance" : 221.85916,
+    "judgement" : 223.85916,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 221.85916,
+      "endTime" : 223.85916,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 229.85916,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 16,
+    "appearance" : 226.0,
+    "judgement" : 228.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 226.0,
+      "endTime" : 228.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 228.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 13,
+    "appearance" : 228.0,
+    "judgement" : 230.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 228.0,
+      "endTime" : 230.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 230.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 2,
+    "appearance" : 230.0,
+    "judgement" : 232.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 230.0,
+      "endTime" : 232.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 238.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 7,
+    "appearance" : 230.0,
+    "judgement" : 232.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 230.0,
+      "endTime" : 232.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 238.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 13,
+    "appearance" : 230.0,
+    "judgement" : 232.0,
+    "duration" : 6.0,
+    "height" : 240.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 230.0,
+      "endTime" : 232.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 238.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 16,
+    "appearance" : 230.0,
+    "judgement" : 232.0,
+    "duration" : 6.0,
+    "height" : 240.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 230.0,
+      "endTime" : 232.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 238.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 3,
+    "appearance" : 238.0,
+    "judgement" : 240.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 238.0,
+      "endTime" : 240.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 6,
+    "appearance" : 238.0,
+    "judgement" : 240.0,
+    "duration" : 6.0,
+    "height" : 1200.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 238.0,
+      "endTime" : 240.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 2,
+    "appearance" : 242.0,
+    "judgement" : 244.0,
+    "duration" : 2.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 242.0,
+      "endTime" : 244.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "hold",
+    "lane" : 7,
+    "appearance" : 242.0,
+    "judgement" : 244.0,
+    "duration" : 2.0,
+    "height" : 400.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 242.0,
+      "endTime" : 244.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 1,
+    "appearance" : 244.0,
+    "judgement" : 246.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 244.0,
+      "endTime" : 246.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 8,
+    "appearance" : 244.0,
+    "judgement" : 246.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 244.0,
+      "endTime" : 246.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 246.0,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 4,
+    "appearance" : 240.0,
+    "judgement" : 247.75,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 240.0,
+      "endTime" : 247.75,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 247.75,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 5,
+    "appearance" : 240.0,
+    "judgement" : 247.75,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 240.0,
+      "endTime" : 247.75,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 247.75,
+    "DisappearEvents" : [ ]
+  }, {
+    "type" : "tap",
+    "lane" : 18,
+    "appearance" : 136.0,
+    "judgement" : 206.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ {
+      "type" : "Rotation",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 33.55731,
+      "finalVal" : 33.55731,
+      "typeName" : "Rotation"
+    } ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 136.0,
+      "endTime" : 150.0,
+      "exponent" : 1.0,
+      "initialVal" : 360.0,
+      "finalVal" : 360.0,
+      "typeName" : "Movement"
+    }, {
+      "type" : "Movement",
+      "startTime" : 204.0,
+      "endTime" : 206.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 206.0,
+    "DisappearEvents" : [ {
+      "type" : "Opacity",
+      "startTime" : 136.0,
+      "endTime" : 152.0,
+      "exponent" : 1.0,
+      "initialVal" : 1.0,
+      "finalVal" : 17.0,
+      "typeName" : "Opacity"
+    } ]
+  }, {
+    "type" : "tap",
+    "lane" : 18,
+    "appearance" : 134.0,
+    "judgement" : 136.0,
+    "duration" : 0.0,
+    "height" : 0.0,
+    "RotationEvents" : [ ],
+    "MovementEvents" : [ {
+      "type" : "Movement",
+      "startTime" : 134.0,
+      "endTime" : 136.0,
+      "exponent" : 1.0,
+      "initialVal" : 972.0,
+      "finalVal" : 0.0,
+      "typeName" : "Movement"
+    } ],
+    "finalScore" : -1.0,
+    "endTime" : 136.0,
+    "DisappearEvents" : [ ]
+  } ],
+  "combo" : 20,
+  "score" : 2500000.0,
+  "LineEvents" : {
+    "upperEvents" : [ ],
+    "lowerEvents" : [ ],
+    "leftEvents" : [ ],
+    "rightEvents" : [ ],
+    "upperJudgementLine" : 960.0,
+    "lowerJudgementLine" : 120.0,
+    "leftBound" : -240.0,
+    "rightBound" : 2160.0
+  }
+}
