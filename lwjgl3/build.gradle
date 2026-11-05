@@ -19,6 +19,10 @@ apply plugin: 'io.github.fourlastor.construo'
 import io.github.fourlastor.construo.Target
 
 sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
+// the game's fonts and LOST mark, for the preview's 实机 (the game's HUD and hit effects)
+processResources {
+  from(new File(gameDir, 'assets')) { include 'fonts/**', 'ParticleEffects/lost.p' }
+}
 application.mainClass = 'org.kelvinizer.lwjgl3.Lwjgl3Launcher'
 application.applicationName = appName
 eclipse.project.name = appName + '-lwjgl3'
@@ -54,6 +58,8 @@ def os = System.properties['os.name'].toLowerCase(Locale.ROOT)
 
 run {
   workingDir = rootProject.file('assets').path
+  // the editor opens the game's charts (assets/Charts of the game project)
+  systemProperty 'kk.gameDir', gameDir.absolutePath
 // You can uncomment the next line if your IDE claims a build failure even when the app closed properly.
   //setIgnoreExitValue(true)
   jvmArgs += "--enable-native-access=ALL-UNNAMED"
@@ -134,7 +140,7 @@ construo {
   jlink {
     guessModulesFromJar.set(false)
     // You may need to add more modules, as needed.
-    modules.addAll("java.base", "java.management", "java.desktop", "jdk.unsupported")
+    modules.addAll("java.base", "java.management", "java.desktop", "java.net.http", "jdk.unsupported")
   }
 
   targets.configure {

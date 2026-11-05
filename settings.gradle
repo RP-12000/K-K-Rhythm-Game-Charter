@@ -6,3 +6,6 @@ plugins {
 // You can remove Strings from the list and reload the Gradle project
 // if you want to temporarily disable a subproject.
 include 'lwjgl3', 'core'
+// The Android tablet version, only where an Android SDK is set up (local.properties with sdk.dir, which Android
+// Studio writes, or ANDROID_HOME): the desktop build needs no Android tools.
+if (file('local.properties').exists() || System.getenv('ANDROID_HOME') != null) include 'android'

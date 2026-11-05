@@ -1,10 +1,19 @@
 [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
 eclipse.project.name = appName + '-core'
 
+// The editor compiles the game's own code (chart model, ChartMapper, GameEngine, renderers), so
+// what you see in the preview and what Save writes always match the game you have.
+def gameSrc = new File(gameDir, 'core/src/main/java')
+if (!gameSrc.isDirectory()) {
+  throw new GradleException("K&K game project not found at ${gameDir}. Set gameDir in gradle.properties.")
+}
+sourceSets.main.java.srcDirs += [ gameSrc ]
+
 dependencies {
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
   api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
-  implementation "com.googlecode.soundlibs:mp3spi:1.9.5.4"
+  // MP3 decoding for the waveform (libGDX's own JLayer, pure Java: the same on the desktop and Android)
+  implementation "com.badlogicgames.jlayer:jlayer:1.0.1-gdx"
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
