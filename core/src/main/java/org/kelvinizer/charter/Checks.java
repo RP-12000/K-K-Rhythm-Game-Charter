@@ -2,7 +2,6 @@ package org.kelvinizer.charter;
 
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.Events;
-import org.kelvinizer.elements.Lane;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteOrbit;
@@ -21,12 +20,14 @@ import java.util.List;
 /**
  * 谱面检查：「谱面」页和顶栏 ⚠ 里列出的问题，每一项都能跳到相关的音符。
  * Chart checks shown in the 谱面 tab and counted by the ⚠ badge: notes on the default approach,
- * taps and hold heads inside a LANE MINE block, and judged notes of its line inside a TIDE STREAM MINE's (a WARN,
+ * taps and hold heads inside a LONG MINE block, and judged notes of its line inside a TIDE STREAM MINE's (a WARN,
  * like the game's laneMineConflicts; mines may stack anywhere since Kelvin 2026-10-22), notes the game did not build,
- * taps / holds stacked on one lane and beat (an INFO: allowed since game 7.166, one finger each),
+ * taps / holds stacked on one spot and beat (an INFO: allowed since game 7.166, one finger each),
  * overlapping events and trails over the copy limit, notes whose whole judgement zone a veil covers, polygon veils and
- * curtains the game drops, and 物件坐标冲突 on orbiting keys. Each item keeps the notes (or the veil) it is about, so
- * 跳到 can select them. 假键 (fake keys) are counted apart and left out of the veil and block checks.
+ * curtains the game drops, custom lines (线条, game 7.187) with fewer than two points, 物件坐标冲突 on orbiting keys
+ * and floating keys (悬浮键, game 7.185) whose centre is off the screen at their beat. Each item keeps the notes
+ * (or the veil) it is about, so 跳到 can select them. 假键 (fake keys) are counted apart and left out of the veil
+ * and block checks.
  */
 final class Checks {
     /** INFO lines are listed but not counted as problems. */
@@ -83,7 +84,7 @@ final class Checks {
 
         Item def = new Item(WARN, null), dup = new Item(ERROR, null), trail = new Item(WARN, null);
         Item mines = new Item(WARN, null), overlap = new Item(WARN, null), hidden = new Item(INFO, null);
-        Item early = new Item(ERROR, null), gone = new Item(ERROR, null), veiled = new Item(WARN, null);
+        Item veiled = new Item(WARN, null), offScreen = new Item(WARN, null);
         int conflicts = 0, tideConflicts = 0, overlaps = 0;
         ArrayList<Item> orbits = new ArrayList<>();
         Veil[] veils = chart != null ? chart.veils() : new Veil[0];
@@ -96,39 +97,42 @@ final class Checks {
                 if (s.buildError == null) dup.add(n);
                 continue;
             }
-            if (g.usesDefaultApproach()) def.add(n);
-            // an inserted lane is not there before its insertion (§3.6), a deleted one after its deletion
-            // (§3.7): narrower than 1 cannot be hit
-            int li = n.inLane() && chart != null ? chart.laneIndexOf(n.lane) : -1;
-            Lane ln = li >= 0 ? chart.lane(li) : null;
-            if (ln != null && (ln.inserted() || ln.deleted()) && ln.widthAt(n.judgement) < 1f) {
-                (ln.deleted() && n.judgement >= ln.deletion().startTime() ? gone : early).add(n);
-            } else if (!n.move.isEmpty() && !n.coversJudgement()) hidden.add(n);
+            if (!n.floating && g.usesDefaultApproach()) def.add(n);         // a floating key does not fall
+            if (!n.move.isEmpty() && !n.coversJudgement()) hidden.add(n);
             for (Doc.DTrail t : n.trails) {
                 if (t.length * t.density <= NoteTrail.MAX_TRAIL_COPIES + 1e-3f) continue;
                 trail.add(n);
                 break;
             }
-            int o = overlaps(n.move) + overlaps(n.rot) + overlaps(n.offEv) + overlaps(n.orbXEv) + overlaps(n.orbYEv)
-                + overlaps(n.orbRadEv) + overlaps(n.orbAngEv) + overlaps(n.alpha) + overlaps(n.heightEv);
+            int o = overlaps(n.move) + overlaps(n.rot) + overlaps(n.xEv) + overlaps(n.orbXEv) + overlaps(n.orbYEv)
+                + overlaps(n.orbRadEv) + overlaps(n.orbAngEv) + overlaps(n.alpha) + overlaps(n.heightEv)
+                + overlaps(n.yEv) + overlaps(n.sizeEv) + overlaps(n.fillEv);
             if (o > 0) {
                 overlaps += o;
                 overlap.add(n);
             }
             boolean real = !(n.fake && n.canFake());               // a 假键 is never judged: no veil or block checks
-            if (real && lay != null && n.type.judged() && zoneVeiled(chart, lay, veils, n)) veiled.add(n);
+            if (real && lay != null && n.type.judged() && !g.floats() && zoneVeiled(chart, lay, veils, n, g)) {
+                veiled.add(n);
+            }
+            // a floating key is judged only inside its circle (CHART_FORMAT §11.3): its centre must be on the screen
+            if (real && g.floats() && n.type.judged() && (Math.abs(g.floating().xAt(n.judgement)) > 960f
+                || g.floating().yAt(n.judgement) < 0f || g.floating().yAt(n.judgement) > 1200f)) {
+                offScreen.add(n);
+            }
             if (pv != null && n.polar() && n.orbitConflict == NoteOrbit.CONFLICT_UNSET) {
                 Item it = orbitConflict(chart, pv, n, g);
                 if (it != null) orbits.add(it);
             }
-            if (real && n.type == NoteType.MINE && n.duration > 0f) {
+            // a floating mine pairs with keys by time and where the fingers are, in the game (7.186)
+            if (real && n.type == NoteType.MINE && n.duration > 0f && !n.floating) {
                 double from = s.beatToMs(n.judgement) - GameEngine.LANE_MINE_LEAD_MS, to = s.beatToMs(n.end());
                 for (Doc.DNote x : doc.notes) {
                     // mines (plain or LANE MINE) may sit anywhere (Kelvin 2026-10-22: 「地雷的限制不用那么多」)
-                    if (x == n || !x.inLane() || x.type == NoteType.MINE || x.line != n.line
-                        || x.lane != n.lane || x.fake) continue;
+                    if (x == n || !x.inLane() || x.type == NoteType.MINE || x.line != n.line || x.fake
+                        || x.floating) continue;                            // a floating key has no line
                     double t = s.beatToMs(x.judgement);
-                    if (t >= from && t < to) {
+                    if (t >= from && t < to && samePlace(n, x, x.judgement)) {
                         conflicts++;
                         mines.add(x);
                         mines.add(n);
@@ -139,7 +143,9 @@ final class Checks {
                 // a TIDE STREAM MINE blocks its line's whole zone from its judgement to its end (CHART_FORMAT §5.1)
                 double from = s.beatToMs(n.judgement), to = s.beatToMs(n.end());
                 for (Doc.DNote x : doc.notes) {
-                    if (x == n || !x.type.judged() || x.line != n.line || x.fake && x.canFake()) continue;
+                    if (x == n || !x.type.judged() || x.line != n.line || x.fake && x.canFake() || x.floating) {
+                        continue;
+                    }
                     double t = s.beatToMs(x.judgement);
                     if (t >= from && t < to) {
                         tideConflicts++;
@@ -147,14 +153,6 @@ final class Checks {
                         mines.add(n);
                     }
                 }
-            }
-        }
-        for (Doc.DLane l : doc.lanes) {
-            int o = overlaps(l.widthEv) + overlaps(l.opacityEv);
-            if (o > 0) {
-                overlaps += o;
-                firstOverlap(l.widthEv, overlap);
-                firstOverlap(l.opacityEv, overlap);
             }
         }
         for (List<Doc.Ev> list : lineLists(doc)) {
@@ -169,7 +167,7 @@ final class Checks {
             items.add(def);
         }
         if (conflicts + tideConflicts > 0) {
-            mines.text = (conflicts > 0 ? conflicts + " 处轨道水雷封锁冲突" : "") + (conflicts > 0 && tideConflicts > 0
+            mines.text = (conflicts > 0 ? conflicts + " 处长水雷封锁冲突" : "") + (conflicts > 0 && tideConflicts > 0
                 ? "，" : "") + (tideConflicts > 0 ? tideConflicts + " 处潮汐水雷封锁冲突" : "");
             items.add(mines);
         }
@@ -182,20 +180,23 @@ final class Checks {
             items.add(overlap);
         }
         items.addAll(orbits);
-        if (!early.uids.isEmpty()) {
-            early.text = early.uids.size() + " 个音符在轨道插入前（打不到）";
-            items.add(early);
-        }
-        if (!gone.uids.isEmpty()) {
-            gone.text = gone.uids.size() + " 个音符在轨道删除后（轨道已经没了，手机上打不到）";
-            items.add(gone);
-        }
         if (!veiled.uids.isEmpty()) {
             veiled.text = veiled.uids.size() + " 个音符判定时整个判定区都被漩涡盖住（打不到）";
             items.add(veiled);
         }
         fewPoints(items, doc.veils, "漩涡");
         fewPoints(items, doc.curtains, "水帘");
+        for (int i = 0; i < doc.strokes.size(); i++) {               // 自定义线条 (game 7.187) need two points
+            Doc.DStroke st = doc.strokes.get(i);
+            if (st.pointCount() >= 2) continue;
+            Item it = new Item(WARN, "第 " + (i + 1) + " 条线条不到 2 个点（游戏会丢掉它）");
+            if (Float.isFinite(st.from)) it.beat = st.from;
+            items.add(it);
+        }
+        if (!offScreen.uids.isEmpty()) {
+            offScreen.text = offScreen.uids.size() + " 个悬浮键判定时中心在屏幕外（打不到）";
+            items.add(offScreen);
+        }
         if (!trail.uids.isEmpty()) {
             trail.text = trail.uids.size() + " 个拖拽残影超过 " + NoteTrail.MAX_TRAIL_COPIES + " 个副本（只画 "
                 + NoteTrail.MAX_TRAIL_COPIES + " 个）";
@@ -214,8 +215,8 @@ final class Checks {
     }
 
     /**
-     * Taps and holds on the same line, lane and beat (Kelvin 2026-11-02, game 7.166: the game keeps them all and each
-     * press judges one, so they need a finger each).
+     * Taps and holds on the same line and beat whose keys overlap (Kelvin 2026-11-02, game 7.166: the game keeps them
+     * all and each press judges one, so they need a finger each).
      *
      * @return an INFO item with every stacked note, or null when there are none
      */
@@ -223,18 +224,31 @@ final class Checks {
         java.util.HashMap<String, java.util.ArrayList<Doc.DNote>> at = new java.util.HashMap<>();
         for (Doc.DNote n : doc.notes) {
             if (n.type != NoteType.TAP && n.type != NoteType.HOLD || n.fake) continue;
-            String key = n.line + "/" + n.lane + "/" + Math.round(n.judgement * 1e4f);
+            if (n.floating) continue;                               // not on a line: no line stack
+            String key = n.line + "/" + Math.round(n.judgement * 1e4f);
             at.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(n);
         }
         Item it = new Item(INFO, null);
         int groups = 0;
         for (java.util.ArrayList<Doc.DNote> g : at.values()) {
             if (g.size() < 2) continue;
-            groups++;
-            for (Doc.DNote n : g) it.add(n);
+            // a group = keys chained by overlaps, left to right
+            g.sort(java.util.Comparator.comparingDouble(n -> Doc.xAt(n, n.judgement)));
+            boolean open = false;
+            for (int i = 1; i < g.size(); i++) {
+                Doc.DNote a = g.get(i - 1), n = g.get(i);
+                if (!samePlace(a, n, n.judgement)) {
+                    open = false;
+                    continue;
+                }
+                if (!open) groups++;
+                open = true;
+                it.add(a);
+                it.add(n);
+            }
         }
         if (groups == 0) return null;
-        it.text = "同轨同拍叠着的音符 " + groups + " 组（每个要一根手指）";
+        it.text = "同一位置同一拍叠着的音符 " + groups + " 组（每个要一根手指）";
         return it;
     }
 
@@ -298,7 +312,7 @@ final class Checks {
                     .append('–').append(Im.fmt(e.end));
             }
         }
-        Item it = new Item(WARN, "物件坐标冲突：" + EditorScreen.laneName(d.lane) + " 轨第 " + Im.fmt(d.judgement) + " 拍的键在第 "
+        Item it = new Item(WARN, "物件坐标冲突：x " + Im.fmt(d.x) + " 第 " + Im.fmt(d.judgement) + " 拍的键在第 "
             + spans + " 拍，公转和移动算出的高度不同（" + evs + " 拍）。看预览后在这个键的「公转」里选以公转为准或以移动为准");
         it.add(d);
         return it;
@@ -317,11 +331,6 @@ final class Checks {
         return 1;
     }
 
-    /**
-     * @return true when, at its judgement, every point of n's judgement zone on screen lies in a showing veil: its
-     *         lane (a TIDE: the whole width) across its line's zone ({@link GameEngine#ZONE_HALF} each way), sampled
-     *         on a 9 × 9 grid of reference points with the game's own test ({@link Veils#containsAny})
-     */
     /** Warns about every polygon in {@code list} with fewer than 3 usable points (the game drops it). */
     private static void fewPoints(List<Item> items, List<Doc.DVeil> list, String kind) {
         for (int i = 0; i < list.size(); i++) {
@@ -334,15 +343,20 @@ final class Checks {
         }
     }
 
-    private static boolean zoneVeiled(Chart c, LaneLayout lay, Veil[] veils, Doc.DNote n) {
+    /**
+     * @return true when, at its judgement, every point of n's judgement zone on screen lies in a showing veil: its
+     *         judging width ({@link LaneLayout#judgeWidth}: one lane at least in 定轨; a TIDE: the whole width) across
+     *         its line's zone ({@link GameEngine#ZONE_HALF} each way),
+     *         sampled on a 9 × 9 grid of reference points with the game's own test ({@link Veils#containsAny})
+     */
+    private static boolean zoneVeiled(Chart c, LaneLayout lay, Veil[] veils, Doc.DNote n, Note g) {
         float b = n.judgement;
         float x0 = LaneLayout.VIEW_LEFT, x1 = LaneLayout.VIEW_RIGHT;
         if (n.inLane()) {
             lay.update(b, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT, 1f);
-            int i = lay.indexOf(n.lane);
-            if (i < 0 || !lay.active(i)) return false;
-            x0 = Math.max(x0, lay.left(i));
-            x1 = Math.min(x1, lay.right(i));
+            float cx = lay.noteX(g, b), half = 0.5f * lay.judgeWidth(g);
+            x0 = Math.max(x0, cx - half);
+            x1 = Math.min(x1, cx + half);
         }
         float ly = c.lineEvents().yAt(n.line, b);
         float y0 = Math.max(0f, ly - GameEngine.ZONE_HALF), y1 = Math.min(Field.REF_H, ly + GameEngine.ZONE_HALF);
@@ -356,6 +370,18 @@ final class Checks {
         return true;
     }
 
+    /**
+     * @return true when keys {@code a} and {@code b} overlap at {@code beat} by more than 1 % of a key width, as the
+     *         game's {@code GameEngine.samePlace} (keys side by side are not; the global scale and camera move both
+     *         alike, so the reference x decide)
+     */
+    static boolean samePlace(Doc.DNote a, Doc.DNote b, float beat) {
+        return Math.abs(Doc.xAt(a, beat) - Doc.xAt(b, beat)) < 0.99f * KEY_W;
+    }
+
+    /** One key's width at scale 1 (game format 6: every key is one size). */
+    static final float KEY_W = 240f;
+
     /** @return the global event lists by channel: upper line, lower line, camera frame, global lane scale. */
     static ArrayList<List<Doc.Ev>> lineLists(Doc d) {
         ArrayList<List<Doc.Ev>> l = new ArrayList<>(4);
@@ -363,6 +389,15 @@ final class Checks {
         l.add(d.lowerEv);
         l.add(d.cameraFrameEv);
         l.add(d.laneScaleEv);
+        return l;
+    }
+
+    /** @return {@link #lineLists} and then the line layers (game 7.177): upper line, lower line, camera frame. */
+    static ArrayList<List<Doc.Ev>> fieldLists(Doc d) {
+        ArrayList<List<Doc.Ev>> l = lineLists(d);
+        l.add(d.upperLay);
+        l.add(d.lowerLay);
+        l.add(d.cameraLay);
         return l;
     }
 
@@ -382,13 +417,14 @@ final class Checks {
         }
     }
 
-    /** @return "412 音符 · 水滴 288 / 水流 64 / 水雷 31 / 浪花 29" (plus 浪花水雷 and 假键 when there are some). */
+    /** @return "412 音符 · 水滴 288 / 水流 64 / 水雷 31 / 浪花 29" (plus 浪花水雷, Drag and 假键 when there are some). */
     String summary() {
         int total = 0;
         for (int c : counts) total += c;
-        int tm = counts[NoteType.TIDE_MINE.ordinal()];
+        int tm = counts[NoteType.TIDE_MINE.ordinal()], dr = counts[NoteType.DRAG.ordinal()];
         return total + " 音符 · 水滴 " + counts[NoteType.TAP.ordinal()] + " / 水流 " + counts[NoteType.HOLD.ordinal()]
             + " / 水雷 " + counts[NoteType.MINE.ordinal()] + " / 浪花 " + counts[NoteType.UNIVERSAL.ordinal()]
-            + (tm > 0 ? " / 浪花水雷 " + tm : "") + (fakes > 0 ? " · 另有假键 " + fakes : "");
+            + (tm > 0 ? " / 浪花水雷 " + tm : "") + (dr > 0 ? " / Drag " + dr : "")
+            + (fakes > 0 ? " · 另有假键 " + fakes : "");
     }
 }

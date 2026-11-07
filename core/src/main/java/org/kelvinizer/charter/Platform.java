@@ -38,5 +38,17 @@ public interface Platform {
         }, title, value, "", com.badlogic.gdx.Input.OnscreenKeyboardType.Default);
     }
 
+    /**
+     * Asks for a number on the tablet. {@code hint} says what {@code /} (the playhead) stands for; with
+     * {@code beats} the box also offers 播放头 / +1/4 / −1/4 buttons. {@code done} runs on the GL thread with the
+     * text, and is not called on cancel.
+     */
+    default void numberInput(String title, String value, String hint, boolean beats, Consumer<String> done) {
+        Gdx.input.getTextInput(new com.badlogic.gdx.Input.TextInputListener() {
+            @Override public void input(String text) { done.accept(text); }
+            @Override public void canceled() { }
+        }, title + " · " + hint, value, hint, com.badlogic.gdx.Input.OnscreenKeyboardType.Default);
+    }
+
 
 }

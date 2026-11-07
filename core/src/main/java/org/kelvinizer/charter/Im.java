@@ -200,6 +200,7 @@ public final class Im extends InputAdapter {
             lostText = buf.toString();
         }
         focusSeen = false;
+        focusHint = null;
         order.clear();
         cursor = Cursor.SystemCursor.Arrow;
         if (toastT > 0f) toastT -= delta;
@@ -475,6 +476,8 @@ public final class Im extends InputAdapter {
         }
         if (click(id, x, y, w, h) || id.equals(focusNext)) {
             focusNext = null;
+            askHint = numeric ? slashHint : null;
+            askBeats = numeric && slashBeats;
             ask(id, value, unit, numeric);
         }
         g.box(x, y, w, h, 5f, Gfx.FIELD, id.equals(askId) ? Gfx.GND : border != null ? border : Gfx.BTN_LINE);
@@ -485,6 +488,9 @@ public final class Im extends InputAdapter {
 
     private Object askId, typedId;
     private String typedText;
+    /** The {@code /} hint of the number field being asked for on the tablet, and whether it is a beat field. */
+    private String askHint;
+    private boolean askBeats;
     boolean textBox = Gdx.app.getType() == Application.ApplicationType.Android;
 
     void answer(Object id, String text) {
@@ -495,6 +501,15 @@ public final class Im extends InputAdapter {
 
     private void ask(Object id, String value, String unit, boolean numeric) {
         askId = id;
+        if (numeric && askHint != null && platform != null) {
+            platform.numberInput("输入数字", value, askHint, askBeats, text -> {
+                if (!id.equals(askId)) return;
+                askId = null;
+                typedId = id;
+                typedText = text == null ? null : text.trim();
+            });
+            return;
+        }
         Gdx.input.getTextInput(new Input.TextInputListener() {
             @Override public void input(String text) {
                 if (!id.equals(askId)) return;
@@ -503,7 +518,7 @@ public final class Im extends InputAdapter {
                 StringBuilder sb = new StringBuilder();
                 for (char ch : text.toCharArray()) {
                     if (ch == '\n' || ch == '\r') sb.append(' ');
-                    else if (!numeric || "0123456789.-+eE".indexOf(ch) >= 0) sb.append(ch);
+                    else if (!numeric || NUM_CHARS.indexOf(ch) >= 0) sb.append(ch);
                 }
                 typedText = sb.toString().trim();
             }
@@ -685,7 +700,7 @@ public final class Im extends InputAdapter {
             char ch = typed.charAt(i);
             if (ch == '\r' || ch == '\n') continue; // Enter is handled once by keyDown.
             if (ch < 32 || ch == 127 || ctrl && !alt) continue;
-            if (numeric && "0123456789.-+eE".indexOf(ch) < 0) continue;
+            if (numeric && NUM_CHARS.indexOf(ch) < 0) continue;
             if (!changedByTyping) pushTextUndo();
             changedByTyping = true;
             replaceSelection(String.valueOf(ch));
@@ -713,7 +728,7 @@ public final class Im extends InputAdapter {
                             if (numeric) {
                                 StringBuilder filtered = new StringBuilder();
                                 for (int n = 0; n < clip.length(); n++)
-                                    if ("0123456789.-+eE".indexOf(clip.charAt(n)) >= 0) filtered.append(clip.charAt(n));
+                                    if (NUM_CHARS.indexOf(clip.charAt(n)) >= 0) filtered.append(clip.charAt(n));
                                 clip = filtered.toString();
                             }
                             pushTextUndo(); replaceSelection(clip); preferredColumn = -1;
@@ -798,15 +813,118 @@ public final class Im extends InputAdapter {
     }
 
     public float num(Object id, float x, float y, float w, float h, float value, String unit, Color border) {
+        float sv = slashNext;
+        String sh = slashNextHint;
+        boolean sb = slashNextBeats, set = slashSet;
+        slashSet = false;
+        slashNext = Float.NaN;
+        slashNextHint = null;
+        if (!set && "拍".equals(unit) && !Float.isNaN(slashBeat)) {     // any 拍 field: / = the playhead
+            sv = slashBeat;
+            sh = beatHint(slashBeat, "");
+            sb = true;
+        }
+        slashHint = sh;
+        slashBeats = sb;
         String s = field(id, x, y, w, h, fmt(value), unit, true, border);
+        slashHint = null;
+        slashBeats = false;
+        if (sh != null && id.equals(focus)) {
+            focusHint = sh;
+            focusHintRect.set(x, y, w, h);
+        }
         if (s == null) return Float.NaN;
-        try {
-            float f = Float.parseFloat(s.trim());
-            return Float.isFinite(f) ? f : Float.NaN;
-        } catch (NumberFormatException e) {
-            toast("不是有效的数字：" + s);
+        return parse(s, sv);
+    }
+
+    // ---- 特殊编号 /: the playhead (Kelvin 2026-11-05, tester feedback)
+
+    /** Characters a number field takes: digits, sign, point, exponent and {@code /} for the playhead. */
+    static final String NUM_CHARS = "0123456789.-+eE/";
+    /** The playhead's beat on the snap grid, set by the editor every frame; NaN = none. */
+    public float slashBeat = Float.NaN;
+    private float slashNext = Float.NaN;
+    private String slashNextHint, slashHint, focusHint;
+    private boolean slashNextBeats, slashBeats, slashSet;
+    private final Rectangle focusHintRect = new Rectangle();
+
+    /**
+     * Sets what {@code /} means in the next {@link #num} field: {@code value}, explained by {@code hint} under the
+     * field (and in the tablet's number box, which adds the playhead and ±1/4 buttons when {@code beats}).
+     * A NaN value turns {@code /} off for that field, even a 拍 one.
+     */
+    public void slash(float value, String hint, boolean beats) {
+        slashSet = true;
+        slashNext = value;
+        slashNextHint = Float.isNaN(value) ? null : hint;
+        slashNextBeats = beats;
+    }
+
+    /** @return the hint for a beat field whose {@code /} is {@code b} ({@code what}: e.g. "距判定 "). */
+    static String beatHint(float b, String what) {
+        return "/ = 播放头 " + what + fmt(b) + " 拍，/+1 = 后一拍，/-0.5 = 前半拍";
+    }
+
+    /**
+     * Reads a number field: a plain number, or {@code /} (= {@code slash}) optionally followed by {@code +k} or
+     * {@code -k}. {@code /2} and {@code 1/4} are refused so they are not mistaken for a division.
+     * @return the value, or NaN with a toast
+     */
+    float parse(String text, float slash) {
+        String t = text.trim();
+        if (t.isEmpty()) return Float.NaN;
+        int at = t.indexOf('/');
+        if (at < 0) {
+            try {
+                float f = Float.parseFloat(t);
+                return Float.isFinite(f) ? f : Float.NaN;
+            } catch (NumberFormatException e) {
+                toast("不是有效的数字：" + text);
+                return Float.NaN;
+            }
+        }
+        if (Float.isNaN(slash)) {
+            toast("这个框不认 /（/ 只用在拍数和运动的数值里）");
             return Float.NaN;
         }
+        String rest = t.substring(at + 1).trim();
+        if (at > 0 || rest.indexOf('/') >= 0 || !rest.isEmpty() && rest.charAt(0) != '+' && rest.charAt(0) != '-') {
+            toast("/ 后面只能接 + 或 -，比如 /+1、/-0.5");
+            return Float.NaN;
+        }
+        if (rest.isEmpty()) return slash;
+        try {
+            float d = Float.parseFloat(rest.substring(1).trim());
+            return Float.isFinite(d) ? slash + (rest.charAt(0) == '-' ? -d : d) : Float.NaN;
+        } catch (NumberFormatException e) {
+            toast("不是有效的数字：" + text);
+            return Float.NaN;
+        }
+    }
+
+    /**
+     * The tablet number box's +1/4 and −1/4: moves {@code text} by {@code by}, keeping a {@code /} form
+     * ({@code "/"} → {@code "/+0.25"}) and starting from {@code /} when the text is not a number.
+     */
+    public static String nudge(String text, float by) {
+        String t = text == null ? "" : text.trim();
+        if (!t.startsWith("/")) {
+            try {
+                return fmt(Float.parseFloat(t) + by);
+            } catch (NumberFormatException e) {
+                t = "/";
+            }
+        }
+        float off = 0f;
+        String rest = t.substring(1).trim();
+        try {
+            float sign = rest.startsWith("-") ? -1f : 1f;
+            if (rest.length() > 1) off = sign * Float.parseFloat(rest.substring(1).trim());
+        } catch (NumberFormatException e) {
+            off = 0f;
+        }
+        off += by;
+        return Math.abs(off) < 1e-6f ? "/" : off > 0f ? "/+" + fmt(off) : "/-" + fmt(-off);
     }
 
     /** @return {@code f} for display: integers without a point, else up to 4 decimals. */
@@ -868,6 +986,12 @@ public final class Im extends InputAdapter {
 
     /** Draws the open popup, modal and toast, and handles their input. */
     public void overlay() {
+        if (focusHint != null && focus != null) {                    // the focused number field's / hint
+            Rectangle r = focusHintRect;
+            float hw = g.width(focusHint, 11) + 16f, hx = Math.max(4f, Math.min(r.x, Gfx.W - hw - 4f));
+            g.box(hx, r.y + r.height + 2f, hw, 22f, 4f, Gfx.BAR, Gfx.SEL_LINE);
+            g.text(focusHint, hx + 8f, r.y + r.height + 13f, 11, Gfx.INK2);
+        }
         if (toast != null && toastT > 0f) {
             float a = Math.min(1f, toastT / 0.3f);
             float tw = g.width(toast, 14) + 40f;

@@ -2,8 +2,9 @@ package org.kelvinizer.charter;
 
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.Events;
+import org.kelvinizer.elements.Floating;
 import org.kelvinizer.elements.JudgementLine;
-import org.kelvinizer.elements.Lane;
+import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteDistortion;
@@ -11,6 +12,7 @@ import org.kelvinizer.elements.NoteGlitch;
 import org.kelvinizer.elements.NoteOrbit;
 import org.kelvinizer.elements.NoteTrail;
 import org.kelvinizer.elements.NoteType;
+import org.kelvinizer.elements.Stroke;
 import org.kelvinizer.elements.Veil;
 
 import java.util.ArrayList;
@@ -18,11 +20,13 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 正在编辑的谱面（可以修改）：和游戏的谱面（1920 × 1200 坐标，判定线 1080 / 120）一一对应；自己的文字是完整的 v4，保存时换成 v5。
+ * 正在编辑的谱面（可以修改）：和游戏的谱面（1920 × 1200 坐标，判定线 1080 / 120）一一对应；没有轨道，每个键有自己的横坐标
+ * x（屏幕中线为 0）和 x 事件。自己的文字是完整的 v4 加「laneless」标记，保存时换成 v6。
  * The chart being edited (mutable). It mirrors the game's chart (positions in the 1920 × 1200 frame, lines at
- * 1080 / 120) one to one; {@link #toJson} writes it as complete, explicit v4 text ({@link #TEXT_FORMAT}), which
- * {@link Library#writeChart} turns into the v5 file (CHART_FORMAT §8). Reading goes through the game's own
- * {@code ChartMapper} ({@link #fromChart}), so older files arrive converted.
+ * 1080 / 120) one to one, without lanes: every key has its own x (0 = the centre line) and x events (Kelvin
+ * 2026-11-05). {@link #toJson} writes it as complete, explicit v4 text marked {@code "laneless": true}
+ * ({@link #TEXT_FORMAT}), which {@link Library#writeChart} turns into the format 6 file (CHART_FORMAT §9). Reading
+ * goes through the game's own {@code ChartMapper} ({@link #fromChart}), so older files arrive converted.
  */
 public final class Doc {
     /** Default spawn distance of the approach template: the game's default approach (1080). */
@@ -48,31 +52,37 @@ public final class Doc {
     public final ArrayList<Seg> flows = new ArrayList<>();
     /** 统一流速 (editor-only {@code "fallBy": "flow"}): falls are timed by {@link #flows}; false = 统一拍数. */
     public boolean flowFall;
-    /** Lanes sorted by id (non-zero, unique). */
-    public final ArrayList<DLane> lanes = new ArrayList<>();
-    /**
-     * Finite lanes: exactly {@link #laneSet} of this many, sharing 1920 × the global scale around the
-     * axis. 0 = unlimited (fixed widths tiled out from the axis, the screen only shows some). Key
-     * {@code laneCount}, read by the game as {@code Chart.laneLimit()} (CHART_FORMAT §3.1).
-     */
-    public int laneCount;
     public float upper = JudgementLine.DEFAULT_UPPER, lower = JudgementLine.DEFAULT_LOWER;
     public final ArrayList<Ev> upperEv = new ArrayList<>(), lowerEv = new ArrayList<>();
     /**
      * Camera frame (LineEvents {@code cameraFrame} / {@code cameraFrameEvents}): how far right of the
-     * screen centre (x 960) the axis between lanes −1 and +1 sits, in reference units; every lane
-     * moves with it. Replaces the old left / right bounds.
+     * screen centre every key is moved, in reference units. Replaces the old left / right bounds.
      */
     public float cameraFrame;
     public final ArrayList<Ev> cameraFrameEv = new ArrayList<>();
-    /** Global lane scale (LineEvents {@code laneScale} / {@code laneScaleEvents}): every lane width × this. */
+    /**
+     * Global scale (LineEvents {@code laneScale} / {@code laneScaleEvents}): every key's x (about the centre line)
+     * and width × this.
+     */
     public float laneScale = 1f;
     public final ArrayList<Ev> laneScaleEv = new ArrayList<>();
+    /**
+     * 定轨 / 无轨 (game 7.184, CHART_FORMAT §12, Kelvin 2026-11-06): from each section's beat on, the field is split
+     * into that many equal lanes (0 = 无轨). Sorted by beat; empty = 无轨 throughout; a new chart starts with
+     * {@link Chart#DEFAULT_FIXED_LANES} from beat 0. Keys keep their own x: the lanes guide placing them
+     * ({@link EditorScreen#snapX(float, float)}) and widen the judging.
+     */
+    public final ArrayList<Lanes> fixedLanes = new ArrayList<>();
+    /** 判定线叠加层 (game 7.177, CHART_FORMAT §10): events whose eased values add to a line's y or the camera. */
+    public final ArrayList<Ev> upperLay = new ArrayList<>(), lowerLay = new ArrayList<>(),
+            cameraLay = new ArrayList<>();
     public final ArrayList<DNote> notes = new ArrayList<>();
     /** Veils in file order (§6.10). */
     public final ArrayList<DVeil> veils = new ArrayList<>();
     /** Curtains (水帘, CHART_FORMAT §6.1) in file order: veils that only blur what is under them. */
     public final ArrayList<DVeil> curtains = new ArrayList<>();
+    /** 自定义线条 (game 7.187, CHART_FORMAT §13) in file order: lines that are only shown. */
+    public final ArrayList<DStroke> strokes = new ArrayList<>();
 
     private static int nextUid = 1;
 
@@ -93,6 +103,19 @@ public final class Doc {
          * {@code "flow"}); {@link Doc#reflow} keeps its start on the tempo and flow BPM. NaN = none.
          */
         public float flow = Float.NaN;
+        /**
+         * 同步链接 (editor-only key {@code "link"}, Kelvin 2026-11-05 「保持链接」): a source's own id, or on a linked
+         * copy the source it follows and how ({@link Link}); {@link Doc#relink} keeps the copies on their source.
+         */
+        public Link link;
+        /** A linked copy as {@link Doc#relink} last set it: beats (from the judgement in 按各自判定), values, exponent. */
+        float[] linked;
+        /**
+         * 快捷曲线 / 快捷事件 (Kelvin 2026-11-06): the cards one quick curve or quick event made share a group (0 =
+         * none) and its name, so a click picks them together and a new curve turns them as one. Not saved or copied.
+         */
+        int group;
+        String tag;
 
         public Ev(float start, float end, float from, float to, float exp) {
             this.start = start;
@@ -106,6 +129,8 @@ public final class Doc {
             Ev e = new Ev(start, end, from, to, exp);
             e.rel = rel;
             e.flow = flow;
+            e.link = link;
+            e.linked = linked;
             return e;
         }
 
@@ -114,6 +139,47 @@ public final class Doc {
             if (end <= start) return to;
             float p = Math.max(0f, Math.min(1f, (t - start) / (end - start)));
             return from + (to - from) * (float) Math.pow(p, exp);
+        }
+    }
+
+    /**
+     * 同步链接 of one event (Kelvin 2026-11-05): a source has an {@code id}; a linked copy names the source it follows
+     * and is {@code dt} beats later and {@code dv} higher, in 按各自判定 ({@code judge}) also shifted by its key's
+     * judgement minus the source key's. Written {@code "link": {"id": 3}} or {@code {"of": 3, "dt": 0, "dv": -120}}.
+     */
+    public static final class Link {
+        public final int id;
+        public final boolean src, judge;
+        public final float dt, dv;
+
+        private Link(int id, boolean src, float dt, float dv, boolean judge) {
+            this.id = id;
+            this.src = src;
+            this.dt = dt;
+            this.dv = dv;
+            this.judge = judge;
+        }
+
+        public static Link source(int id) {
+            return new Link(id, true, 0f, 0f, false);
+        }
+
+        public static Link copyOf(int id, float dt, float dv, boolean judge) {
+            return new Link(id, false, dt, dv, judge);
+        }
+
+        String json() {
+            return src ? "{ \"id\": " + id + " }" : "{ \"of\": " + id + ", \"dt\": " + num(dt) + ", \"dv\": " + num(dv)
+                + (judge ? ", \"judge\": true }" : " }");
+        }
+
+        /** @return the link a file's {@code "link"} value names, null for none or an unreadable one */
+        static Link read(com.badlogic.gdx.utils.JsonValue v) {
+            if (v == null || !v.isObject()) return null;
+            if (v.has("id")) return source(v.getInt("id", 0));
+            float dt = v.getFloat("dt", 0f), dv = v.getFloat("dv", 0f);
+            return v.has("of") && Float.isFinite(dt) && Float.isFinite(dv)
+                ? copyOf(v.getInt("of", 0), dt, dv, v.getBoolean("judge", false)) : null;
         }
     }
 
@@ -127,35 +193,14 @@ public final class Doc {
         }
     }
 
-    /** A lane: id, width weight, decoration opacity and their events (§3). */
-    public static final class DLane {
-        public int id;
-        public float width = Lane.DEFAULT_WIDTH, opacity = Lane.DEFAULT_OPACITY;
-        public final ArrayList<Ev> widthEv = new ArrayList<>(), opacityEv = new ArrayList<>();
-        /**
-         * The insertion (§3.6, Kelvin 2026-10-15): start and end beat, initial width and exponent; its
-         * final width is {@link #width}. Null for a lane that is always there.
-         */
-        public Ev insert;
-        /**
-         * The deletion (§3.7, Kelvin 2026-10-17): from {@code start} the lane shrinks from {@code from} to
-         * {@code to} by {@code end}, then is 0 wide. Null for a lane that stays.
-         */
-        public Ev delete;
+    /** A 定轨 section: from {@code beat} on, {@code count} fixed lanes (0 = 无轨). */
+    public static final class Lanes {
+        public float beat;
+        public int count;
 
-        public DLane(int id) {
-            this.id = id;
-        }
-
-        public DLane copy() {
-            DLane l = new DLane(id);
-            l.width = width;
-            l.opacity = opacity;
-            copyAll(widthEv, l.widthEv);
-            copyAll(opacityEv, l.opacityEv);
-            l.insert = insert != null ? insert.copy() : null;
-            l.delete = delete != null ? delete.copy() : null;
-            return l;
+        public Lanes(float beat, int count) {
+            this.beat = beat;
+            this.count = count;
         }
     }
 
@@ -233,8 +278,8 @@ public final class Doc {
         public boolean polygon;
         public float radius = Veil.DEFAULT_RADIUS;
         public float[] points = new float[0];
-        /** Centre (the format's defaults are the middle of the 1920 × 1200 frame), angle and opacity. */
-        public float x = 960f, y = 600f, rotation, opacity = 1f;
+        /** Centre (x from the centre line, y up; the defaults are the middle of the frame), angle and opacity. */
+        public float x = 0f, y = 600f, rotation, opacity = 1f;
         public float start = Float.NaN, end = Float.NaN;
         public final ArrayList<Ev> xEv = new ArrayList<>(), yEv = new ArrayList<>();
         public final ArrayList<Ev> rotEv = new ArrayList<>(), opacityEv = new ArrayList<>();
@@ -294,12 +339,97 @@ public final class Doc {
         }
     }
 
+    /**
+     * 自定义线条 (game 7.187, CHART_FORMAT §13, Kelvin 2026-11-06): a straight or curved line through its points, x from
+     * the centre line and y 0–1200 up like a floating key's centre; only shown, never judged. {@code from} /
+     * {@code to} are NaN when unbounded; {@code color} is RGBA8888.
+     */
+    public static final class DStroke {
+        public final int uid;
+        public float[] points = new float[0];
+        public boolean curve, closed, front;
+        public float from = Float.NaN, to = Float.NaN, drawIn, drawOut, width = Stroke.DEFAULT_WIDTH, opacity = 1f;
+        public int color = Stroke.DEFAULT_COLOR;
+        public final ArrayList<Ev> opacityEv = new ArrayList<>();
+        public final ArrayList<DGlitch> glitches = new ArrayList<>();
+        public final ArrayList<DDist> distortions = new ArrayList<>();
+
+        public DStroke() {
+            this(nextUid++);
+        }
+
+        private DStroke(int uid) {
+            this.uid = uid;
+        }
+
+        public int pointCount() {
+            return points.length / 2;
+        }
+
+        /** Adds point (x, y) after point {@code at} (−1 = before the first, past the last = at the end). */
+        public void addPoint(int at, float x, float y) {
+            int i = Math.max(0, Math.min(at + 1, pointCount()));
+            float[] p = new float[points.length + 2];
+            System.arraycopy(points, 0, p, 0, 2 * i);
+            p[2 * i] = x;
+            p[2 * i + 1] = y;
+            System.arraycopy(points, 2 * i, p, 2 * i + 2, points.length - 2 * i);
+            points = p;
+        }
+
+        public void removePoint(int i) {
+            float[] p = new float[points.length - 2];
+            System.arraycopy(points, 0, p, 0, 2 * i);
+            System.arraycopy(points, 2 * i + 2, p, 2 * i, p.length - 2 * i);
+            points = p;
+        }
+
+        /** @param sameUid keep the uid (undo snapshots) or take a new one (duplicate) */
+        public DStroke copy(boolean sameUid) {
+            DStroke s = sameUid ? new DStroke(uid) : new DStroke();
+            s.points = points.clone();
+            s.curve = curve;
+            s.closed = closed;
+            s.front = front;
+            s.from = from;
+            s.to = to;
+            s.drawIn = drawIn;
+            s.drawOut = drawOut;
+            s.width = width;
+            s.opacity = opacity;
+            s.color = color;
+            copyAll(opacityEv, s.opacityEv);
+            for (DGlitch g : glitches) s.glitches.add(g.copy());
+            for (DDist d : distortions) s.distortions.add(d.copy());
+            return s;
+        }
+    }
+
+    /** @return RGBA8888 {@code c} as the chart writes it: "#RRGGBB" when opaque, else "#RRGGBBAA". */
+    public static String colorText(int c) {
+        String t = String.format(java.util.Locale.ROOT, "#%08X", c);
+        return (c & 0xFF) == 0xFF ? t.substring(0, 7) : t;
+    }
+
+    /** @return "#RRGGBB" or "#RRGGBBAA" (the # may be left out) as RGBA8888, or null when it is neither. */
+    public static Integer parseColor(String t) {
+        String h = t.trim().startsWith("#") ? t.trim().substring(1) : t.trim();
+        if (h.length() != 6 && h.length() != 8 || !h.matches("[0-9A-Fa-f]+")) return null;
+        long v = Long.parseLong(h, 16);
+        return (int) (h.length() == 6 ? v << 8 | 0xFF : v);
+    }
+
     /** A note. {@code uid} stays the same across copies, so selections survive undo. */
     public static final class DNote {
         public final int uid;
         public NoteType type;
         public Line line;
-        public int lane;
+        /**
+         * 横坐标 (game format 6, Kelvin 2026-11-05 「以屏幕中线为y轴设置X坐标」): the key's centre in reference
+         * units from the screen's centre line, negative to the left (±960 = the edges at 16:10), before the global
+         * scale and camera. Only for {@link #inLane} types; outside every {@link #xEv} event the key sits here.
+         */
+        public float x;
         public float judgement, duration, height;
         /** Appearance beat as read from the file; NaN for new notes (written as the earliest event). */
         public float appearance = Float.NaN;
@@ -307,14 +437,20 @@ public final class Doc {
         public float autoH = Float.NaN;
         public final ArrayList<Ev> move = new ArrayList<>(), rot = new ArrayList<>();
         public final ArrayList<Ev> alpha = new ArrayList<>(), heightEv = new ArrayList<>();
-        /** 横移 events (Kelvin 2026-10-28): the offset by beat; outside every event {@link #offsetX} applies. */
-        public final ArrayList<Ev> offEv = new ArrayList<>();
+        /** 横坐标 events: the key's x by beat (values like {@link #x}); outside every event {@link #x} applies. */
+        public final ArrayList<Ev> xEv = new ArrayList<>();
         /**
-         * 公转 (§3, Kelvin 2026-10-29): lane notes turn about the absolute point ({@link #orbitX}, {@link #orbitY}) of
-         * the 1920 × 1200 reference frame (y up) instead of their pivot; its moves hold their end value.
+         * 叠加层 (game 7.177, CHART_FORMAT §10): while one of these events runs its eased value is added to the key's
+         * x ({@link #xLay}, keys with a place only), fall position ({@link #posLay}) or rotation ({@link #rotLay});
+         * they may overlap and add 0 outside.
+         */
+        public final ArrayList<Ev> xLay = new ArrayList<>(), posLay = new ArrayList<>(), rotLay = new ArrayList<>();
+        /**
+         * 公转 (§3, Kelvin 2026-10-29): keys turn about the point ({@link #orbitX}, {@link #orbitY}) instead of
+         * their pivot: x from the centre line, y up in the 1200-high frame; its moves hold their end value.
          */
         public boolean orbit;
-        public float orbitX = 960f, orbitY = 600f;
+        public float orbitX = 0f, orbitY = 600f;
         public final ArrayList<Ev> orbXEv = new ArrayList<>(), orbYEv = new ArrayList<>();
         /**
          * 公转半径 / 公转角度 (§3, Kelvin 2026-10-29 20:55, 21:13): with either the key's head goes round the centre at the
@@ -329,10 +465,26 @@ public final class Doc {
         public boolean orbitRigid;
         /** 假键 (game 7.167 / 7.169 "fake", not on 浪花水雷): drawn until its beat, never judged, counted or heard. */
         public boolean fake;
+        /**
+         * 悬浮键 (game 7.185 / 7.186, CHART_FORMAT §11, Kelvin 2026-11-06): a tap, hold, DRAG or mine ({@link #canFloat})
+         * that shows at ({@link #x}, {@link #y}) from {@link #appearance} (NaN = the game's default) and fills up by
+         * its beat instead of falling to a line; it has no fall, rotation, layer, orbit, pivot, tail, trail, glitch
+         * or distortion ({@link #toFloating}).
+         */
+        public boolean floating;
+        /** A floating key's centre height, up in the 1200-high frame (600 = the middle of the screen). */
+        public float y = Floating.DEFAULT_Y;
+        /** A floating key's diameter; NaN = its type's ({@link Floating#defaultSize}). */
+        public float size = Float.NaN;
+        /** A floating key's height, diameter and fill events (fill: 0 full, the diameter empty; CHART_FORMAT §11.2). */
+        public final ArrayList<Ev> yEv = new ArrayList<>(), sizeEv = new ArrayList<>(), fillEv = new ArrayList<>();
+        /** A floating DRAG's route: DRAGs with the same chain are joined (null = none). */
+        public String chain;
 
-        /** @return true when the fake flag applies to this type (水滴, 水流, 水雷, 浪花 / 潮汐). */
+        /** @return true when the fake flag applies to this type (水滴, 水流, 水雷, 浪花 / 潮汐, Drag). */
         public boolean canFake() {
-            return type == NoteType.TAP || type == NoteType.HOLD || type == NoteType.MINE || type == NoteType.UNIVERSAL;
+            return type == NoteType.TAP || type == NoteType.HOLD || type == NoteType.MINE || type == NoteType.UNIVERSAL
+                || type == NoteType.DRAG;
         }
 
         /** @return true for an orbit with a radius or an angle ({@link NoteOrbit#polar()}). */
@@ -351,18 +503,17 @@ public final class Doc {
         public float pivotX, pivotY;
         /** TIDE / TIDE STREAM wave speed (§3, Kelvin 2026-10-28): waves per beat, positive to the right, 0 = still. */
         public float waveSpeed;
-        /** Lane-note body offset (§3, Kelvin 2026-10-28): reference units to the screen's right on both lines. */
-        public float offsetX;
 
-        public DNote(NoteType type, Line line, int lane, float judgement) {
-            this(nextUid++, type, line, lane, judgement);
+        /** @param x the key's {@link #x} (ignored by TIDE kinds) */
+        public DNote(NoteType type, Line line, float x, float judgement) {
+            this(nextUid++, type, line, x, judgement);
         }
 
-        private DNote(int uid, NoteType type, Line line, int lane, float judgement) {
+        private DNote(int uid, NoteType type, Line line, float x, float judgement) {
             this.uid = uid;
             this.type = type;
             this.line = line;
-            this.lane = lane;
+            this.x = x;
             this.judgement = judgement;
         }
 
@@ -379,7 +530,7 @@ public final class Doc {
             return type.inLane();
         }
 
-        /** @return the Chinese display name (水滴, 水流, 水雷, 轨道水雷, 浪花, 潮汐, 浪花水雷, 潮汐水雷). */
+        /** @return the Chinese display name (水滴, 水流, 水雷, 长水雷, 浪花, 潮汐, 浪花水雷, 潮汐水雷). */
         public String nameZh() {
             return type.displayZh(duration > 0f);
         }
@@ -391,14 +542,17 @@ public final class Doc {
 
         /** @param sameUid keep the uid (undo snapshots) or take a new one (paste, duplicate) */
         public DNote copy(boolean sameUid) {
-            DNote n = sameUid ? new DNote(uid, type, line, lane, judgement) : new DNote(type, line, lane, judgement);
+            DNote n = sameUid ? new DNote(uid, type, line, x, judgement) : new DNote(type, line, x, judgement);
             n.duration = duration;
             n.height = height;
             n.appearance = appearance;
             n.autoH = autoH;
             copyAll(move, n.move);
             copyAll(rot, n.rot);
-            copyAll(offEv, n.offEv);
+            copyAll(xEv, n.xEv);
+            copyAll(xLay, n.xLay);
+            copyAll(posLay, n.posLay);
+            copyAll(rotLay, n.rotLay);
             n.orbit = orbit;
             n.orbitX = orbitX;
             n.orbitY = orbitY;
@@ -411,6 +565,13 @@ public final class Doc {
             n.orbitConflict = orbitConflict;
             n.orbitRigid = orbitRigid;
             n.fake = fake;
+            n.floating = floating;
+            n.y = y;
+            n.size = size;
+            copyAll(yEv, n.yEv);
+            copyAll(sizeEv, n.sizeEv);
+            copyAll(fillEv, n.fillEv);
+            n.chain = chain;
             copyAll(alpha, n.alpha);
             copyAll(heightEv, n.heightEv);
             for (DTrail t : trails) n.trails.add(t.copy());
@@ -419,7 +580,6 @@ public final class Doc {
             n.pivotX = pivotX;
             n.pivotY = pivotY;
             n.waveSpeed = waveSpeed;
-            n.offsetX = offsetX;
             return n;
         }
 
@@ -432,13 +592,19 @@ public final class Doc {
             if (!Float.isNaN(appearance)) appearance += db;
             shiftRel(move, db);
             shiftRel(rot, db);
-            shiftRel(offEv, db);
+            shiftRel(xEv, db);
+            shiftRel(xLay, db);
+            shiftRel(posLay, db);
+            shiftRel(rotLay, db);
             shiftRel(orbXEv, db);
             shiftRel(orbYEv, db);
             shiftRel(orbRadEv, db);
             shiftRel(orbAngEv, db);
             shiftRel(alpha, db);
             shiftRel(heightEv, db);
+            shiftRel(yEv, db);
+            shiftRel(sizeEv, db);
+            shiftRel(fillEv, db);
             moveWindows(db);
         }
 
@@ -472,19 +638,40 @@ public final class Doc {
             }
         }
 
+        /** @return every event list of the key: movement, rotation, x, the layers, orbit, opacity and height */
+        public List<List<Ev>> lists() {
+            return java.util.Arrays.asList(move, rot, xEv, xLay, posLay, rotLay, orbXEv, orbYEv, orbRadEv, orbAngEv,
+                alpha, heightEv);
+        }
+
+        /** Moves the key {@code dx} sideways: its x and every x event's values. */
+        public void moveX(float dx) {
+            x += dx;
+            for (Ev e : xEv) {
+                e.from += dx;
+                e.to += dx;
+            }
+        }
+
         /** Moves the note by {@code db} beats together with all its events, absolute ones too (「整体平移」). */
         public void shift(float db) {
             judgement += db;
             if (!Float.isNaN(appearance)) appearance += db;
             shiftAll(move, db);
             shiftAll(rot, db);
-            shiftAll(offEv, db);
+            shiftAll(xEv, db);
+            shiftAll(xLay, db);
+            shiftAll(posLay, db);
+            shiftAll(rotLay, db);
             shiftAll(orbXEv, db);
             shiftAll(orbYEv, db);
             shiftAll(orbRadEv, db);
             shiftAll(orbAngEv, db);
             shiftAll(alpha, db);
             shiftAll(heightEv, db);
+            shiftAll(yEv, db);
+            shiftAll(sizeEv, db);
+            shiftAll(fillEv, db);
             moveWindows(db);
         }
 
@@ -504,8 +691,72 @@ public final class Doc {
          */
         public boolean defaultFall(Ev e) {
             return Math.abs(e.end - judgement) < 1e-4f
-                && Math.abs(e.start - (judgement - Note.DEFAULT_APPROACH_BEATS)) < 1e-4f && e.from == SPAWN
+                && Math.abs(e.start - (judgement - Note.DEFAULT_APPROACH_BEATS)) < 1e-4f && e.from == spawn()
                 && e.to == 0f && e.exp == 1f;
+        }
+
+        /** @return where its default fall starts: {@link #SPAWN} from its line */
+        public float spawn() {
+            return SPAWN;
+        }
+
+        /** @return true when its only movement is the default fall (or none: the game's default) */
+        private boolean onDefaultFall() {
+            return move.isEmpty() ? !noApproach() : move.size() == 1 && defaultFall(move.get(0));
+        }
+
+        /** @return true for the types that can float: 水滴, 水流, Drag and 水雷 / 长水雷 ({@link NoteType#floats()}) */
+        public boolean canFloat() {
+            return type.floats();
+        }
+
+        /** @return a floating key's diameter: its own, or its type's when it writes none */
+        public float sizeOr() {
+            return Float.isFinite(size) && size > 0f ? size : Floating.defaultSize(type, duration);
+        }
+
+        /**
+         * Makes the key float (game 7.185, CHART_FORMAT §11) at its x and height {@code y}, shown from the game's
+         * default beat: it drops what only a key on a line has (fall, rotation, layers, orbit, pivot, tail, trail);
+         * glitch and distortion stay (game 7.187); a chain stays on a DRAG only.
+         */
+        public void toFloating(float y) {
+            floating = true;
+            this.y = y;
+            line = Line.LOWER;
+            appearance = Float.NaN;
+            for (List<Ev> l : java.util.Arrays.asList(move, rot, xLay, posLay, rotLay, heightEv)) l.clear();
+            orbit = false;
+            pivotX = 0f;
+            pivotY = 0f;
+            height = 0f;
+            autoH = Float.NaN;
+            trails.clear();
+            if (type != NoteType.DRAG) chain = null;
+        }
+
+        /** Puts a floating key back on the lower line at its x, on the default fall; its height, size and fill go. */
+        public void toLine() {
+            floating = false;
+            appearance = Float.NaN;
+            y = Floating.DEFAULT_Y;
+            size = Float.NaN;
+            yEv.clear();
+            sizeEv.clear();
+            fillEv.clear();
+            chain = null;
+            line = Line.LOWER;
+            approach(Note.DEFAULT_APPROACH_BEATS, SPAWN, 1f);
+        }
+
+        /** Moves a floating key by (dx, dy) with its x and y events. */
+        public void moveXY(float dx, float dy) {
+            moveX(dx);
+            y += dy;
+            for (Ev e : yEv) {
+                e.from += dy;
+                e.to += dy;
+            }
         }
 
         /** @return true when the authored movement reaches the judgement; otherwise the note is judged off screen. */
@@ -532,24 +783,32 @@ public final class Doc {
         for (Seg s : flows) d.flows.add(new Seg(s.beat, s.bpm));
         d.flowFall = flowFall;
         d.offsetMs = offsetMs;
-        d.laneCount = laneCount;
-        for (DLane l : lanes) d.lanes.add(l.copy());
         d.upper = upper;
         d.lower = lower;
         d.cameraFrame = cameraFrame;
         copyAll(cameraFrameEv, d.cameraFrameEv);
         d.laneScale = laneScale;
         copyAll(laneScaleEv, d.laneScaleEv);
+        for (Lanes l : fixedLanes) d.fixedLanes.add(new Lanes(l.beat, l.count));
         copyAll(upperEv, d.upperEv);
         copyAll(lowerEv, d.lowerEv);
+        copyAll(upperLay, d.upperLay);
+        copyAll(lowerLay, d.lowerLay);
+        copyAll(cameraLay, d.cameraLay);
         for (DNote n : notes) d.notes.add(n.copy(true));
         for (DVeil v : veils) d.veils.add(v.copy(true));
         for (DVeil v : curtains) d.curtains.add(v.copy(true));
+        for (DStroke v : strokes) d.strokes.add(v.copy(true));
         return d;
     }
 
     public DNote byUid(int uid) {
         for (DNote n : notes) if (n.uid == uid) return n;
+        return null;
+    }
+
+    public DStroke strokeByUid(int uid) {
+        for (DStroke v : strokes) if (v.uid == uid) return v;
         return null;
     }
 
@@ -559,83 +818,14 @@ public final class Doc {
         return null;
     }
 
-    public DLane lane(int id) {
-        for (DLane l : lanes) if (l.id == id) return l;
-        return null;
-    }
-
-    /** @return the lane ids of {@code n} finite lanes: −⌊n/2⌋..−1, 1..⌈n/2⌉. */
-    public static int[] laneSet(int n) {
-        int left = n / 2, right = n - left;
-        int[] ids = new int[n];
-        for (int i = 0; i < left; i++) ids[i] = i - left;
-        for (int i = 0; i < right; i++) ids[left + i] = i + 1;
-        return ids;
-    }
-
-    /** Adds lane {@code id} (default width and opacity) if it is missing. */
-    public void ensureLane(int id) {
-        if (id == 0 || lane(id) != null) return;
-        lanes.add(new DLane(id));
-        sortLanes();
-    }
-
-    /**
-     * @return whether lanes {@code a} &lt; {@code b} are next to each other (unlimited lanes: every id but 0 is a
-     * lane).
-     */
-    public boolean adjacent(int a, int b) {
-        if (a >= b) return false;
-        for (int k = a + 1; k < b; k++) if (k == 0 ? lane(0) != null : laneCount == 0 || lane(k) != null) return false;
-        return true;
-    }
-
-    /**
-     * Inserts a lane between the adjacent lanes {@code a} &lt; {@code b} (§3.6): the free id between
-     * them (0 between −1 and 1), else {@code b} (or {@code a} on the left side) after moving that
-     * lane and every lane further out, with their notes and events, one id outwards. It appears at
-     * {@code beat}, growing over one beat from 0 to its neighbours' mean width, exponent 1.
-     * @return the new lane's id
-     */
-    public int insertLane(int a, int b, float beat) {
-        float w = 0.5f * (lane(a) != null ? lane(a).width : Lane.DEFAULT_WIDTH)
-            + 0.5f * (lane(b) != null ? lane(b).width : Lane.DEFAULT_WIDTH);
-        int id;
-        if (a < 0 && b > 0) id = 0;
-        else if (laneCount > 0 && b - a > 1) id = a + 1;
-        else if (a >= 0) shiftLanes(id = b, 1);
-        else shiftLanes(id = a, -1);
-        DLane l = new DLane(id);
-        l.width = w;
-        l.insert = new Ev(beat, beat + 1f, 0f, w, 1f);
-        lanes.add(l);
-        sortLanes();
-        if (laneCount > 0) laneCount = lanes.size();
-        return id;
-    }
-
-    /**
-     * Removes lane {@code id} and the notes on it, then moves the lanes further out one id back in (the reverse of
-     * {@link #insertLane}).
-     */
-    public void removeLane(int id) {
-        lanes.removeIf(l -> l.id == id);
-        notes.removeIf(n -> n.inLane() && n.lane == id);
-        if (id > 0) shiftLanes(id + 1, -1);
-        else if (id < 0) shiftLanes(id - 1, 1);
-        sortLanes();
-        if (laneCount > 0) laneCount = lanes.size();
-    }
-
-    /** Moves lane {@code from} and every lane further out from the axis (with their notes) by {@code by} ids. */
-    private void shiftLanes(int from, int by) {
-        for (DLane l : lanes) if (from > 0 ? l.id >= from : l.id <= from) l.id += by;
-        for (DNote n : notes) if (n.inLane() && (from > 0 ? n.lane >= from : n.lane <= from)) n.lane += by;
-    }
-
-    public int laneIndex(int id) {
-        for (int i = 0; i < lanes.size(); i++) if (lanes.get(i).id == id) return i;
-        return -1;
+    /** @return the first route name of c, c2, c3, … that no DRAG uses (a new DRAG chain) */
+    public String freeChain() {
+        for (int k = 1; ; k++) {
+            String id = k == 1 ? "c" : "c" + k;
+            boolean used = false;
+            for (DNote n : notes) used |= id.equals(n.chain);
+            if (!used) return id;
+        }
     }
 
     /** @return the BPM in force at {@code beat}. */
@@ -661,6 +851,25 @@ public final class Doc {
 
     public void sortFlows() {
         flows.sort(Comparator.comparingDouble(s -> s.beat));
+    }
+
+    /**
+     * @return the fixed lane count at {@code beat} (0 = 无轨) as the game's {@link Chart#fixedLanesAt} counts it: the
+     *         last section starting at or before it; before the first, that one's count when it starts at beat 0 or
+     *         earlier
+     */
+    public int lanesAt(float beat) {
+        int k = 0;
+        for (int i = 0; i < fixedLanes.size(); i++) {
+            Lanes l = fixedLanes.get(i);
+            if (l.beat <= beat || i == 0 && l.beat <= 0f) k = l.count;
+            else break;
+        }
+        return k;
+    }
+
+    public void sortLanes() {
+        fixedLanes.sort(Comparator.comparingDouble(l -> l.beat));
     }
 
     /** @return milliseconds from beat 0 to {@code beat} on {@link #bpms} (negative before it; CHART_FORMAT §2.1). */
@@ -698,8 +907,12 @@ public final class Doc {
         return (float) beatOf(msOf(judgement) - flowBeats * 60000.0 / flowAt(judgement));
     }
 
-    /** @return the suggested tail: {@link #APPROACH} per beat of the duration, per flow beat under 统一流速. */
+    /**
+     * @return the suggested tail: {@link #APPROACH} per beat of the duration, per flow beat under 统一流速; none on a
+     *         floating key (it has no tail)
+     */
     public float autoHeight(DNote n) {
+        if (n.floating) return 0f;
         if (!flowFall) return n.duration * APPROACH;
         return (float) (APPROACH * (msOf(n.judgement + n.duration) - msOf(n.judgement))
             * flowAt(n.judgement) / 60000.0);
@@ -734,18 +947,20 @@ public final class Doc {
     /**
      * 不跟判定线 (Kelvin 2026-11-03): from {@code a} to {@code b} the notes stay where they would be if their line
      * stayed where it is at {@code a}, by rewriting their movement events (the game is not changed). Over that time
-     * each note's distance gets the line's offset added back (sky: + (U(t) − U(a)), ground: − (L(t) − L(a))): pieces
-     * follow every movement and line event boundary, linear pieces stay one piece, eased ones are cut every
+     * each note's distance gets the line's offset added back (sky: + (U(t) − U(a)), ground: − (L(t) − L(a)), the
+     * line's 叠加层 included): pieces follow every movement, line and layer event boundary, linear pieces stay one
+     * piece, eased ones are cut every
      * {@link #STILL_STEP} beats (1/16 beat where only the fall eases). Events running on past {@code b} are rebuilt
      * unchanged from there. A note on the default fall gets it written out first; the rebuilt events are absolute
-     * and not linked to a flow speed. Notes on a 公转 radius or angle are skipped (their place comes from the orbit).
-     * @return {changed notes, skipped orbit notes}
+     * and not linked to a flow speed. Notes on a 公转 radius or angle are skipped (their place comes from the orbit),
+     * and so are floating keys (they have no line).
+     * @return {changed notes, skipped orbit and floating notes}
      */
     public int[] holdStill(List<DNote> sel, float a, float b) {
         int changed = 0, skipped = 0;
         if (!(b > a)) return new int[]{0, 0};
         for (DNote n : sel) {
-            if (n.polar()) {
+            if (n.polar() || n.floating) {
                 skipped++;
                 continue;
             }
@@ -758,22 +973,25 @@ public final class Doc {
             boolean up = n.line == Line.UPPER;
             List<Ev> line = up ? upperEv : lowerEv;
             float base = up ? upper : lower;
-            if (stillNote(n, line, base, up ? 1f : -1f, a, b)) changed++;
+            if (stillNote(n, line, up ? upperLay : lowerLay, base, up ? 1f : -1f, a, b)) changed++;
             else if (wrote) n.move.clear();
         }
         return new int[]{changed, skipped};
     }
 
     /** One note of {@link #holdStill}. @return whether its movement changed */
-    private static boolean stillNote(DNote n, List<Ev> line, float base, float sign, float from, float to) {
-        float ref = lineAt(line, base, from);
+    private static boolean stillNote(DNote n, List<Ev> line, List<Ev> lay, float base, float sign, float from,
+                                     float to) {
+        float ref = lineAt(line, base, from) + layerAt(lay, from);
         // only the part where the line is away from ref is rebuilt; the note's other events stay as they are
         ArrayList<Float> lc = new ArrayList<>();
         lc.add(from);
         lc.add(to);
-        for (Ev e : line) {
-            lc.add(e.start);
-            lc.add(e.end);
+        for (List<Ev> l : java.util.Arrays.asList(line, lay)) {
+            for (Ev e : l) {
+                lc.add(e.start);
+                lc.add(e.end);
+            }
         }
         lc.removeIf(t -> t < from || t > to);
         lc.sort(null);
@@ -781,8 +999,10 @@ public final class Doc {
         for (int i = 0; i + 1 < lc.size(); i++) {
             float x0 = lc.get(i), x1 = lc.get(i + 1);
             if (x1 - x0 < 1e-5f) continue;
-            Ev le = cover(line, (x0 + x1) * 0.5f);
+            float mid = (x0 + x1) * 0.5f;
+            Ev le = cover(line, mid);
             boolean away = le == null ? base != ref : le.from != ref || le.to != ref;
+            for (Ev e : lay) away |= e.start <= mid && mid <= e.end && (e.from != 0f || e.to != 0f);
             if (!away) continue;
             if (Float.isNaN(a)) a = x0;
             b = x1;
@@ -808,9 +1028,11 @@ public final class Doc {
             cuts.add(e.start);
             cuts.add(e.end);
         }
-        for (Ev e : line) {
-            cuts.add(e.start);
-            cuts.add(e.end);
+        for (List<Ev> l : java.util.Arrays.asList(line, lay)) {
+            for (Ev e : l) {
+                cuts.add(e.start);
+                cuts.add(e.end);
+            }
         }
         final float lo = a, hi = r;
         cuts.removeIf(t -> t < lo || t > hi);
@@ -826,17 +1048,20 @@ public final class Doc {
             touched = true;
             boolean inside = mid < b;
             Ev le = inside ? cover(line, mid) : null;
-            boolean lineFlat = !inside || le == null || le.from == le.to || le.end <= le.start;
+            // how the line's offset runs over this piece: 0 still, 1 straight, 2 eased (its layers included)
+            int shape = !inside ? 0 : Math.max(le == null || le.from == le.to || le.end <= le.start ? 0
+                : le.exp == 1f ? 1 : 2, layerShape(lay, mid));
+            List<Ev> pl = inside ? lay : java.util.Collections.emptyList();
             boolean noteFlat = e.exp == 1f || e.from == e.to || e.end <= e.start;
-            if (noteFlat && (lineFlat || le.exp == 1f)) {
-                out.add(still(e, le, inside, line, base, ref, sign, x0, x1, 1f));
-            } else if (lineFlat && Math.abs(x0 - e.start) < 1e-5f) {
-                out.add(still(e, le, inside, line, base, ref, sign, x0, x1, e.exp));
+            if (noteFlat && shape <= 1) {
+                out.add(still(e, le, pl, mid, base, ref, sign, inside, x0, x1, 1f));
+            } else if (shape == 0 && Math.abs(x0 - e.start) < 1e-5f) {
+                out.add(still(e, le, pl, mid, base, ref, sign, inside, x0, x1, e.exp));
             } else {
-                float step = lineFlat || le.exp == 1f ? STILL_STEP_FALL : STILL_STEP;
+                float step = shape <= 1 ? STILL_STEP_FALL : STILL_STEP;
                 int k = Math.max(1, (int) Math.ceil((x1 - x0) / step - 1e-4f));
                 for (int j = 0; j < k; j++) {
-                    out.add(still(e, le, inside, line, base, ref, sign, x0 + (x1 - x0) * j / k,
+                    out.add(still(e, le, pl, mid, base, ref, sign, inside, x0 + (x1 - x0) * j / k,
                         j == k - 1 ? x1 : x0 + (x1 - x0) * (j + 1) / k, 1f));
                 }
             }
@@ -858,16 +1083,32 @@ public final class Doc {
     }
 
     /** A rebuilt piece of {@link #stillNote} from {@code x0} to {@code x1}: absolute, no flow. */
-    private static Ev still(Ev e, Ev le, boolean inside, List<Ev> line, float base, float ref, float sign, float x0,
-                            float x1, float exp) {
-        return new Ev(x0, x1, e.valueAt(x0) + offset(le, inside, base, ref, sign, x0),
-            e.valueAt(x1) + offset(le, inside, base, ref, sign, x1), exp);
+    private static Ev still(Ev e, Ev le, List<Ev> lay, float mid, float base, float ref, float sign, boolean inside,
+                            float x0, float x1, float exp) {
+        return new Ev(x0, x1, e.valueAt(x0) + offset(le, lay, mid, base, ref, sign, inside, x0),
+            e.valueAt(x1) + offset(le, lay, mid, base, ref, sign, inside, x1), exp);
     }
 
-    /** @return what {@link #stillNote} adds at {@code t}: the line's move from {@code ref}, signed for the line. */
-    private static float offset(Ev le, boolean inside, float base, float ref, float sign, float t) {
+    /**
+     * @return what {@link #stillNote} adds at {@code t}: the line's move from {@code ref}, signed for the line, with
+     *         the layer events running over the piece around {@code mid} (pieces are cut at every layer boundary)
+     */
+    private static float offset(Ev le, List<Ev> lay, float mid, float base, float ref, float sign, boolean inside,
+                                float t) {
         if (!inside) return 0f;
-        return sign * ((le != null ? le.valueAt(t) : base) - ref);
+        float y = le != null ? le.valueAt(t) : base;
+        for (Ev e : lay) if (e.start <= mid && mid <= e.end) y += e.valueAt(t);
+        return sign * (y - ref);
+    }
+
+    /** @return how the layer events running at {@code mid} change: 0 not at all, 1 in straight lines, 2 eased. */
+    private static int layerShape(List<Ev> lay, float mid) {
+        int shape = 0;
+        for (Ev e : lay) {
+            if (e.start > mid || mid > e.end || e.from == e.to || e.end <= e.start) continue;
+            shape = Math.max(shape, e.exp == 1f ? 1 : 2);
+        }
+        return shape;
     }
 
     /**
@@ -880,10 +1121,59 @@ public final class Doc {
         return best != null && t <= best.end ? best : null;
     }
 
+    /**
+     * 运动器拖动排序 (Kelvin 2026-11-05): moves card {@code from} of a channel in time order to slot {@code to}.
+     * Only the cards from the old to the new slot change: they keep the stretch of beats they had, each its own
+     * length, with the gaps between them where they were; values chain by change (each starts where the one before
+     * it ends, from the first one's start value), so the motion does not jump and the cards after are untouched.
+     *
+     * @param list one channel's events sorted by start
+     */
+    public static void reorderEvents(List<Ev> list, int from, int to) {
+        int a = Math.min(from, to), m = Math.max(from, to) - a + 1;
+        ArrayList<Ev> seg = new ArrayList<>(list.subList(a, a + m));
+        float[] gap = new float[m];
+        for (int k = 0; k + 1 < m; k++) gap[k] = seg.get(k + 1).start - seg.get(k).end;
+        float t = seg.get(0).start, v = seg.get(0).from;
+        seg.add(to - a, seg.remove(from - a));
+        for (int k = 0; k < m; k++) {
+            Ev e = seg.get(k);
+            float d = e.end - e.start, dv = e.to - e.from;
+            e.start = t;
+            e.end = t + d;
+            e.from = v;
+            e.to = v + dv;
+            e.flow = Float.NaN;                                     // timed by hand now
+            v = e.to;
+            t = e.end + gap[k];
+            list.set(a + k, e);
+        }
+    }
+
     /** @return the value of a line channel at {@code t}: its covering event's, else {@code base}. */
     static float lineAt(List<Ev> line, float base, float t) {
         Ev e = cover(line, t);
         return e != null ? e.valueAt(t) : base;
+    }
+
+    /**
+     * @return what a 叠加层 list adds at {@code t}, as the game's {@code Layers.at}: every event running then, summed
+     *         (0 outside them); one ending on {@code t} hands over when another starts on it
+     */
+    static float layerAt(List<Ev> lay, float t) {
+        boolean handOver = false;
+        for (Ev e : lay) handOver |= e.start == t;
+        float sum = 0f;
+        for (Ev e : lay) {
+            if (e.start > t || e.end < t || e.end == t && handOver && e.start < e.end) continue;
+            sum += e.valueAt(t);
+        }
+        return sum;
+    }
+
+    /** @return a key's x at beat {@code t} with its 叠加层, as the game's {@code Note.xAt}. */
+    static float xAt(DNote n, float t) {
+        return lineAt(n.xEv, n.x, t) + layerAt(n.xLay, t);
     }
 
     /**
@@ -912,6 +1202,97 @@ public final class Doc {
     }
 
     /**
+     * 同步链接 (Kelvin 2026-11-05 「保持链接」), run on every change: each linked copy takes its source's beats, values
+     * and exponent again, shifted by its {@link Link}. A copy that changed by itself (not as its source moved it) keeps
+     * its values and is let go, and so is a copy whose source is gone; a source nothing follows is a plain event again.
+     * @return how many copies were let go
+     */
+    public int relink() {
+        java.util.HashMap<Integer, Ev> src = new java.util.HashMap<>();
+        java.util.HashMap<Integer, DNote> srcKey = new java.util.HashMap<>();
+        boolean any = false;
+        for (DNote n : notes) {
+            for (List<Ev> l : n.lists()) {
+                for (Ev e : l) {
+                    any |= e.link != null;
+                    if (e.link == null || !e.link.src) continue;
+                    if (src.containsKey(e.link.id)) {
+                        e.link = null;                                // a duplicated source: the first one leads
+                    } else {
+                        src.put(e.link.id, e);
+                        srcKey.put(e.link.id, n);
+                    }
+                }
+            }
+        }
+        if (!any) return 0;
+        java.util.HashSet<Integer> followed = new java.util.HashSet<>();
+        int cut = 0;
+        for (DNote n : notes) {
+            for (List<Ev> l : n.lists()) {
+                boolean moved = false;
+                for (Ev e : l) {
+                    if (e.link == null || e.link.src) continue;
+                    Ev s = src.get(e.link.id);
+                    float j = e.link.judge ? n.judgement : 0f;          // 按各自判定 compares beats from the judgement
+                    float[] now = {e.start - j, e.end - j, e.from, e.to, e.exp}, want = null;
+                    if (s != null) {
+                        float dt = e.link.dt + (e.link.judge ? n.judgement - srcKey.get(e.link.id).judgement : 0f) - j;
+                        want = new float[]{s.start + dt, s.end + dt, s.from + e.link.dv, s.to + e.link.dv, s.exp};
+                        if (!same(now, want) && (e.linked == null || !same(now, e.linked))) want = null;
+                    }
+                    if (want == null) {
+                        e.link = null;
+                        e.linked = null;
+                        cut++;
+                        continue;
+                    }
+                    if (!same(now, want)) {
+                        e.start = want[0] + j;
+                        e.end = want[1] + j;
+                        e.from = want[2];
+                        e.to = want[3];
+                        e.exp = want[4];
+                        moved = true;
+                    }
+                    e.linked = want;
+                    followed.add(e.link.id);
+                }
+                if (moved) l.sort(Comparator.comparingDouble(x -> x.start));
+            }
+        }
+        for (java.util.Map.Entry<Integer, Ev> en : src.entrySet()) {
+            if (!followed.contains(en.getKey())) en.getValue().link = null;
+        }
+        return cut;
+    }
+
+    private static boolean same(float[] a, float[] b) {
+        for (int i = 0; i < a.length; i++) {
+            if (Math.abs(a[i] - b[i]) > 1e-4f * Math.max(1f, Math.abs(b[i]))) return false;
+        }
+        return true;
+    }
+
+    /** @return how many events follow source {@code id} (同步链接) */
+    public int followers(int id) {
+        int c = 0;
+        for (DNote n : notes) {
+            for (List<Ev> l : n.lists()) for (Ev e : l) if (e.link != null && !e.link.src && e.link.id == id) c++;
+        }
+        return c;
+    }
+
+    /** @return an id no 同步链接 uses yet */
+    public int nextLinkId() {
+        int m = 0;
+        for (DNote n : notes) {
+            for (List<Ev> l : n.lists()) for (Ev e : l) if (e.link != null) m = Math.max(m, e.link.id);
+        }
+        return m + 1;
+    }
+
+    /**
      * Switches 统一拍数 / 统一流速 for the whole chart (the caller marks undo). To flow, a note whose
      * movement is one relative fall onto the line (or none: the game's default approach) keeps its
      * number of beats as flow beats; back, each flow fall keeps its number as plain beats. Their
@@ -928,7 +1309,7 @@ public final class Doc {
             boolean hit = false;
             if (flow) {
                 // no movement = the game's default approach: written out so it can follow the flow
-                if (n.move.isEmpty() && !n.noApproach()) n.approach(Note.DEFAULT_APPROACH_BEATS, SPAWN, 1f);
+                if (n.move.isEmpty() && !n.noApproach()) n.approach(Note.DEFAULT_APPROACH_BEATS, n.spawn(), 1f);
                 Ev e = n.move.size() == 1 ? n.move.get(0) : null;
                 if (e != null && e.rel && Float.isNaN(e.flow) && Math.abs(e.end - n.judgement) < 1e-4f && e.to == 0f
                     && e.start < e.end) {
@@ -953,35 +1334,48 @@ public final class Doc {
         return changed;
     }
 
-    public void sortLanes() {
-        lanes.sort(Comparator.comparingInt(l -> l.id));
-    }
-
-    /** Sorts notes by judgement (stable), then every event list by start (stable). */
+    /**
+     * Sorts notes by judgement, on one beat the keys on the lines (as they were) before the floating keys left to
+     * right, then bottom to top, as the game orders them (Chart.NOTE_ORDER); then every event list by start (all
+     * stable).
+     */
     public void sortAll() {
-        notes.sort(Comparator.comparingDouble(n -> n.judgement));
+        notes.sort((a, b) -> {
+            int c = Float.compare(a.judgement, b.judgement);
+            if (c != 0) return c;
+            boolean fa = a.floating && a.canFloat(), fb = b.floating && b.canFloat();
+            if (fa != fb || !fa) return Boolean.compare(fa, fb);
+            // + 0f: −0 and 0 are one place
+            c = Float.compare(at(a.xEv, a.judgement, a.x) + 0f, at(b.xEv, b.judgement, b.x) + 0f);
+            return c != 0 ? c : Float.compare(at(a.yEv, a.judgement, a.y) + 0f, at(b.yEv, b.judgement, b.y) + 0f);
+        });
         Comparator<Ev> byStart = Comparator.comparingDouble(e -> e.start);
         for (DNote n : notes) {
             n.move.sort(byStart);
             n.rot.sort(byStart);
-            n.offEv.sort(byStart);
+            n.xEv.sort(byStart);
+            n.xLay.sort(byStart);
+            n.posLay.sort(byStart);
+            n.rotLay.sort(byStart);
             n.orbXEv.sort(byStart);
             n.orbYEv.sort(byStart);
             n.orbRadEv.sort(byStart);
             n.orbAngEv.sort(byStart);
             n.alpha.sort(byStart);
             n.heightEv.sort(byStart);
-        }
-        for (DLane l : lanes) {
-            l.widthEv.sort(byStart);
-            l.opacityEv.sort(byStart);
+            n.yEv.sort(byStart);
+            n.sizeEv.sort(byStart);
+            n.fillEv.sort(byStart);
         }
         upperEv.sort(byStart);
         lowerEv.sort(byStart);
         cameraFrameEv.sort(byStart);
         laneScaleEv.sort(byStart);
-        sortBpms();
         sortLanes();
+        upperLay.sort(byStart);
+        lowerLay.sort(byStart);
+        cameraLay.sort(byStart);
+        sortBpms();
     }
 
     /** @return the last beat any note, veil end or tempo change uses (0 for an empty chart). */
@@ -996,7 +1390,10 @@ public final class Doc {
 
     // ================================================================== reading
 
-    /** A new chart: 8 lanes −4..−1, 1..4 of width 240, the game's default lines (120 / 1080), camera frame 0. */
+    /**
+     * A new chart: the game's default lines (120 / 1080), scale 1, camera frame 0 and, from beat 0,
+     * {@link Chart#DEFAULT_FIXED_LANES} fixed lanes (定轨, game 7.184).
+     */
     public static Doc blank(String title, String artist, String illustrator, String level, float bpm, float offsetMs) {
         Doc d = new Doc();
         d.title = nz(title);
@@ -1005,7 +1402,7 @@ public final class Doc {
         d.level = nz(level);
         d.bpms.add(new Seg(0f, bpm > 0f ? bpm : 120f));
         d.offsetMs = offsetMs;
-        for (int id = -4; id <= 4; id++) if (id != 0) d.lanes.add(new DLane(id));
+        d.fixedLanes.add(new Lanes(0f, Chart.DEFAULT_FIXED_LANES));
         return d;
     }
 
@@ -1015,7 +1412,7 @@ public final class Doc {
      * {@code flowBpmList} / {@code fallBy}. Without a {@code "rel"} key the default fall
      * ({@link DNote#defaultFall}) is relative (Kelvin 2026-10-13 06:28) and every other event absolute;
      * a key in the file ({@code true}, or {@code false} for a default fall made absolute) wins. Notes
-     * are matched by type, line, lane and judgement in file order; event lists keep the order the
+     * are matched by type, line, judgement and (a laneless file) x in file order; event lists keep the order the
      * editor wrote them in (sorted by start).
      */
     public static void readRelFlags(Doc d, com.badlogic.gdx.files.FileHandle f) {
@@ -1031,7 +1428,8 @@ public final class Doc {
         com.badlogic.gdx.utils.JsonValue root, list;
         try {
             d.iterations = iterationsIn(text);
-            if (!text.contains("\"rel\"") && !text.contains("\"flow") && !text.contains("\"fallBy\"")) return;
+            if (!text.contains("\"rel\"") && !text.contains("\"flow") && !text.contains("\"fallBy\"")
+                && !text.contains("\"link\"")) return;
             root = new com.badlogic.gdx.utils.JsonReader().parse(text);
             list = root.get("notes");
         } catch (Exception e) {
@@ -1050,26 +1448,38 @@ public final class Doc {
             if (!d.flows.isEmpty()) d.flows.get(0).beat = 0f;
         }
         if (list == null) return;
+        // a laneless file (format 6, or the editor's own text) tells keys of one beat apart by x; a lane file by order
+        boolean placed = root.getInt("format", 0) >= 6 || root.getBoolean("laneless", false);
         java.util.HashMap<String, java.util.ArrayDeque<DNote>> byKey = new java.util.HashMap<>();
         for (DNote n : d.notes) {
-            byKey.computeIfAbsent(noteKey(n.type.json, n.line.json, n.inLane() ? n.lane : 0, n.judgement),
+            byKey.computeIfAbsent(noteKey(n.type.json, n.line.json, n.judgement, placed && n.inLane(), n.x),
                 k -> new java.util.ArrayDeque<>()).add(n);
         }
         for (com.badlogic.gdx.utils.JsonValue v = list.child; v != null; v = v.next) {
+            NoteType t = NoteType.fromJson(v.getString("type", ""));
             java.util.ArrayDeque<DNote> q = byKey.get(noteKey(v.getString("type", ""), v.getString("line", "lower"),
-                v.getInt("lane", 0), v.getFloat("judgement", v.getFloat("beat", Float.NaN))));
+                v.getFloat("judgement", v.getFloat("beat", Float.NaN)), placed && t != null && t.inLane(),
+                v.getFloat("x", 0f)));
             DNote n = q != null ? q.poll() : null;
             if (n == null) continue;
             // v4 names, else v5 (a v5 note without positionEvents falls by default, relative)
             markRel(v.has("MovementEvents") ? v.get("MovementEvents") : v.get("positionEvents"), n.move);
             markRel(v.has("RotationEvents") ? v.get("RotationEvents") : v.get("rotationEvents"), n.rot);
-            markRel(v.get("offsetXEvents"), n.offEv);
+            // a lane file's 横移 events became the x events one to one where its lanes stand still
+            com.badlogic.gdx.utils.JsonValue xs = v.has("xEvents") ? v.get("xEvents") : v.get("offsetXEvents");
+            if (xs != null && xs.size == n.xEv.size()) markRel(xs, n.xEv);
             markRel(v.get("orbitXEvents"), n.orbXEv);
             markRel(v.get("orbitYEvents"), n.orbYEv);
             markRel(v.get("orbitRadiusEvents"), n.orbRadEv);
             markRel(v.get("orbitAngleEvents"), n.orbAngEv);
+            markRel(v.get("xLayers"), n.xLay);
+            markRel(v.get("positionLayers"), n.posLay);
+            markRel(v.get("rotationLayers"), n.rotLay);
             markRel(v.has("DisappearEvents") ? v.get("DisappearEvents") : v.get("opacityEvents"), n.alpha);
             markRel(v.has("HeightEvents") ? v.get("HeightEvents") : v.get("heightEvents"), n.heightEv);
+            markRel(v.get("yEvents"), n.yEv);
+            markRel(v.get("sizeEvents"), n.sizeEv);
+            markRel(v.get("fillEvents"), n.fillEv);
         }
         for (DNote n : d.notes) {
             boolean linked = false;
@@ -1100,8 +1510,8 @@ public final class Doc {
         }
     }
 
-    private static String noteKey(String type, String line, int lane, float judgement) {
-        return type + '|' + line + '|' + lane + '|' + Math.round(judgement * 10000.0);
+    private static String noteKey(String type, String line, float judgement, boolean byX, float x) {
+        return type + '|' + line + '|' + Math.round(judgement * 10000.0) + (byX ? "|" + Math.round(x * 100.0) : "");
     }
 
     private static void markRel(com.badlogic.gdx.utils.JsonValue arr, List<Ev> list) {
@@ -1112,6 +1522,7 @@ public final class Doc {
             if (r != null && r.isBoolean()) list.get(i).rel = r.asBoolean();
             float fb = e.getFloat("flow", Float.NaN);
             if (fb > 0f && fb < 1000f) list.get(i).flow = fb;
+            list.get(i).link = Link.read(e.get("link"));
         }
     }
 
@@ -1132,25 +1543,6 @@ public final class Doc {
         }
         if (d.bpms.size() == 1) d.bpms.get(0).beat = 0f;
         d.offsetMs = c.offsetMs();
-        d.laneCount = c.laneLimit();
-        for (Lane l : c.lanes()) {
-            if (l.implicit()) continue; // filled in by the loader, never written
-            DLane x = new DLane(l.id());
-            x.width = l.baseWidth();
-            x.opacity = l.baseOpacity();
-            read(l.widthEvents(), x.widthEv);
-            read(l.opacityEvents(), x.opacityEv);
-            if (l.inserted()) {
-                Events e = l.insert();
-                x.insert = new Ev(e.startTime(), e.endTime(), e.initialValue(), x.width, e.exponent());
-            }
-            if (l.deleted()) {
-                Events e = l.deletion();
-                x.delete = new Ev(e.startTime(), e.endTime(), e.initialValue(), e.finalValue(), e.exponent());
-            }
-            d.lanes.add(x);
-        }
-        if (d.lanes.isEmpty()) for (int id = -4; id <= 4; id++) if (id != 0) d.lanes.add(new DLane(id));
         JudgementLine j = c.lineEvents();
         d.upper = j.upperBase();
         d.lower = j.lowerBase();
@@ -1160,27 +1552,40 @@ public final class Doc {
         read(j.cameraFrameEvents(), d.cameraFrameEv);
         d.laneScale = j.laneScaleBase();
         read(j.laneScaleEvents(), d.laneScaleEv);
+        read(j.upperLayers(), d.upperLay);
+        read(j.lowerLayers(), d.lowerLay);
+        read(j.cameraLayers(), d.cameraLay);
+        float[] lb = c.fixedLaneBeats();
+        int[] lc = c.fixedLaneCounts();
+        for (int i = 0; i < lb.length && i < lc.length; i++) d.fixedLanes.add(new Lanes(lb[i], lc[i]));
         for (Note n : c.notes()) {
-            DNote x = new DNote(n.type(), n.line(), n.laneId(), n.judgement());
+            if (n.floats()) {
+                d.notes.add(readFloating(n));
+                continue;
+            }
+            DNote x = new DNote(n.type(), n.line(), n.hasX() ? n.x() : 0f, n.judgement());
             x.duration = n.duration();
             x.height = n.height();
             x.appearance = n.appearance();
             x.pivotX = n.pivotX();
             x.pivotY = n.pivotY();
             x.waveSpeed = n.waveSpeed();
-            x.offsetX = n.offsetX();
             read(n.movementEvents(), x.move);
             // a v5 file leaves the default fall out; the editor keeps it as an event, as a v4 file wrote it
             if (c.sourceFormat() >= 5 && x.move.isEmpty() && n.usesDefaultApproach()) {
-                x.move.add(new Ev(n.judgement() - Note.DEFAULT_APPROACH_BEATS, n.judgement(), SPAWN, 0f, 1f));
+                x.move.add(new Ev(n.judgement() - Note.DEFAULT_APPROACH_BEATS, n.judgement(), x.spawn(), 0f, 1f));
             }
             read(n.rotationEvents(), x.rot);
-            read(n.offsetXEvents(), x.offEv);
+            read(n.xEvents(), x.xEv);
+            if (n.type().inLane()) read(n.xLayers(), x.xLay);
+            read(n.positionLayers(), x.posLay);
+            read(n.rotationLayers(), x.rotLay);
             if (n.orbit() != null) {
                 x.orbit = true;
-                x.orbitX = n.orbit().x();
+                x.orbitX = n.orbit().x() - LaneLayout.TILE_CENTRE;
                 x.orbitY = n.orbit().y();
                 read(n.orbit().xEvents(), x.orbXEv);
+                fromFrame(x.orbXEv);
                 read(n.orbit().yEvents(), x.orbYEv);
                 x.orbitRadius = n.orbit().radius();
                 x.orbitAngle = n.orbit().angle();
@@ -1214,8 +1619,47 @@ public final class Doc {
             read(v.blurEvents(), x.blurEv);
             d.curtains.add(x);
         }
+        for (Stroke st : c.strokes()) {
+            DStroke x = new DStroke();
+            x.points = st.points().clone();
+            x.curve = st.curve();
+            x.closed = st.closed();
+            x.front = st.front();
+            x.from = Float.isInfinite(st.from()) ? Float.NaN : st.from();
+            x.to = Float.isInfinite(st.to()) ? Float.NaN : st.to();
+            x.drawIn = st.drawIn();
+            x.drawOut = st.drawOut();
+            x.width = st.width();
+            x.color = st.color();
+            x.opacity = st.baseOpacity();
+            read(st.opacityEvents(), x.opacityEv);
+            readGlitches(st.glitches(), x.glitches);
+            readDistortions(st.distortions(), x.distortions);
+            d.strokes.add(x);
+        }
         d.sortAll();
         return d;
+    }
+
+    /** A floating key of the game's chart (CHART_FORMAT §11): what it writes (size and appear NaN when default). */
+    private static DNote readFloating(Note n) {
+        Floating f = n.floating();
+        DNote x = new DNote(n.type(), Line.LOWER, f.x(), n.judgement());
+        x.floating = true;
+        x.y = f.y();
+        x.size = f.size() != Floating.defaultSize(n.type(), n.duration()) ? f.size() : Float.NaN;
+        x.duration = n.duration();
+        x.appearance = f.appear() != f.defaultAppear(n.judgement()) ? f.appear() : Float.NaN;
+        x.chain = f.chain();
+        read(f.xEvents(), x.xEv);
+        read(f.yEvents(), x.yEv);
+        read(f.sizeEvents(), x.sizeEv);
+        read(f.fillEvents(), x.fillEv);
+        read(n.disappearEvents(), x.alpha);
+        x.fake = n.fake();
+        readGlitches(n.glitches(), x.glitches);
+        readDistortions(n.distortions(), x.distortions);
+        return x;
     }
 
     /** One veil (or curtain) of the game's chart as the editor keeps it. */
@@ -1224,19 +1668,39 @@ public final class Doc {
         x.polygon = v.shape() == Veil.Shape.POLYGON;
         x.radius = v.radius();
         if (x.polygon) x.points = v.points();
-        x.x = v.baseX();
+        x.x = v.baseX() - LaneLayout.TILE_CENTRE;
         x.y = v.baseY();
         x.rotation = v.baseRotation();
         x.opacity = v.baseOpacity();
         x.start = v.hasStart() ? v.startTime() : Float.NaN;
         x.end = v.hasEnd() ? v.endTime() : Float.NaN;
         read(v.xEvents(), x.xEv);
+        fromFrame(x.xEv);
         read(v.yEvents(), x.yEv);
         read(v.rotationEvents(), x.rotEv);
         read(v.opacityEvents(), x.opacityEv);
         readGlitches(v.glitches(), x.glitches);
         readDistortions(v.distortions(), x.distortions);
         return x;
+    }
+
+    /** Game x values (0–1920 frame) of orbit centres and veils become the editor's x from the centre line. */
+    private static void fromFrame(List<Ev> list) {
+        for (Ev e : list) {
+            e.from -= LaneLayout.TILE_CENTRE;
+            e.to -= LaneLayout.TILE_CENTRE;
+        }
+    }
+
+    /** @return copies of x events from the centre line with their values back in the 0–1920 frame (for writing). */
+    private static List<Ev> toFrame(List<Ev> list) {
+        ArrayList<Ev> out = new ArrayList<>(list.size());
+        copyAll(list, out);
+        for (Ev e : out) {
+            e.from += LaneLayout.TILE_CENTRE;
+            e.to += LaneLayout.TILE_CENTRE;
+        }
+        return out;
     }
 
     private static void readGlitches(List<NoteGlitch> src, ArrayList<DGlitch> dst) {
@@ -1332,33 +1796,18 @@ public final class Doc {
         }
         if (offsetMs != 0f && Float.isFinite(offsetMs)) b.append("  \"offsetMs\": ")
             .append(num(offsetMs)).append(",\n");
-        if (laneCount > 0) b.append("  \"laneCount\": ").append(laneCount).append(",\n");
-        b.append("  \"lanes\": [\n");
-        for (int i = 0; i < lanes.size(); i++) {
-            DLane l = lanes.get(i);
-            b.append("    { \"id\": ").append(l.id).append(", \"width\": ").append(num(l.width))
-                .append(", \"opacity\": ").append(num(l.opacity));
-            b.append(", \"widthEvents\": ");
-            events(b, l.widthEv, "Width");
-            b.append(", \"opacityEvents\": ");
-            events(b, l.opacityEv, "Opacity");
-            if (l.insert != null) {
-                // all five keys, the final width being the lane's width (ChartMapper.write does the same)
-                b.append(", \"insert\": { \"startTime\": ").append(num(l.insert.start)).append(", \"endTime\": ")
-                    .append(num(l.insert.end)).append(", \"initial\": ").append(num(l.insert.from))
-                    .append(", \"final\": ").append(num(l.width)).append(", \"exponent\": ")
-                    .append(num(l.insert.exp)).append(" }");
+        // keys stand on their own x (game format 6, CHART_FORMAT §9): no lanes
+        b.append("  \"laneless\": true,\n");
+        if (!fixedLanes.isEmpty()) {
+            // 定轨 / 无轨 sections (game 7.184, CHART_FORMAT §12)
+            b.append("  \"fixedLanes\": [");
+            for (int i = 0; i < fixedLanes.size(); i++) {
+                if (i > 0) b.append(", ");
+                b.append("{ \"beat\": ").append(num(fixedLanes.get(i).beat)).append(", \"count\": ")
+                    .append(fixedLanes.get(i).count).append(" }");
             }
-            if (l.delete != null) {
-                // all five keys, like ChartMapper.write (§3.7)
-                b.append(", \"delete\": { \"startTime\": ").append(num(l.delete.start)).append(", \"endTime\": ")
-                    .append(num(l.delete.end)).append(", \"initial\": ").append(num(l.delete.from))
-                    .append(", \"final\": ").append(num(l.delete.to)).append(", \"exponent\": ")
-                    .append(num(l.delete.exp)).append(" }");
-            }
-            b.append(i + 1 < lanes.size() ? " },\n" : " }\n");
+            b.append("],\n");
         }
-        b.append("  ],\n");
         b.append("  \"notes\": [\n");
         boolean first = true;
         for (DNote n : notes) {
@@ -1366,9 +1815,9 @@ public final class Doc {
             first = false;
             note(b, n);
         }
-        if (Float.isFinite(sentinelBeat) && !lanes.isEmpty()) {
+        if (Float.isFinite(sentinelBeat)) {
             if (!first) b.append(",\n");
-            b.append("    { \"type\": \"mine\", \"line\": \"lower\", \"lane\": ").append(lanes.get(0).id)
+            b.append("    { \"type\": \"mine\", \"line\": \"lower\", \"x\": 0")
                 .append(", \"judgement\": ").append(num(sentinelBeat)).append(", \"appearance\": ")
                 .append(num(sentinelBeat)).append(" }");
         }
@@ -1388,6 +1837,10 @@ public final class Doc {
             b.append(",\n    \"cameraFrame\": ").append(num(cameraFrame)).append(",\n    \"cameraFrameEvents\": ");
             events(b, cameraFrameEv, "CameraFrame");
         }
+        // 叠加层 (game 7.177), only when there are some
+        if (!upperLay.isEmpty()) events(b.append(",\n    \"upperLayers\": "), upperLay, null);
+        if (!lowerLay.isEmpty()) events(b.append(",\n    \"lowerLayers\": "), lowerLay, null);
+        if (!cameraLay.isEmpty()) events(b.append(",\n    \"cameraLayers\": "), cameraLay, null);
         b.append("\n  }");
         // only when there are some, after LineEvents (ChartMapper.write does the same)
         if (!veils.isEmpty()) {
@@ -1406,8 +1859,40 @@ public final class Doc {
             }
             b.append("  ]");
         }
+        if (!strokes.isEmpty()) {
+            b.append(",\n  \"strokes\": [\n");
+            for (int i = 0; i < strokes.size(); i++) {
+                stroke(b, strokes.get(i));
+                b.append(i + 1 < strokes.size() ? ",\n" : "\n");
+            }
+            b.append("  ]");
+        }
         b.append("\n}\n");
         return b.toString();
+    }
+
+    /** §13: a custom line's points, then only what differs from the defaults (as the game writes it). */
+    private static void stroke(StringBuilder b, DStroke st) {
+        b.append("    { \"points\": [");
+        for (int i = 0; i < st.pointCount(); i++) {
+            b.append(i > 0 ? ", [" : "[").append(num(st.points[2 * i])).append(", ").append(num(st.points[2 * i + 1]))
+                .append(']');
+        }
+        b.append(']');
+        if (st.curve) b.append(", \"curve\": true");
+        if (st.closed) b.append(", \"closed\": true");
+        if (st.front) b.append(", \"front\": true");
+        if (Float.isFinite(st.from)) b.append(", \"from\": ").append(num(st.from));
+        if (Float.isFinite(st.to)) b.append(", \"to\": ").append(num(st.to));
+        if (st.drawIn != 0f) b.append(", \"drawIn\": ").append(num(st.drawIn));
+        if (st.drawOut != 0f) b.append(", \"drawOut\": ").append(num(st.drawOut));
+        if (st.width != Stroke.DEFAULT_WIDTH) b.append(", \"width\": ").append(num(st.width));
+        if (st.color != Stroke.DEFAULT_COLOR) b.append(", \"color\": ").append(str(colorText(st.color)));
+        if (st.opacity != 1f) b.append(", \"opacity\": ").append(num(st.opacity));
+        if (!st.opacityEv.isEmpty()) events(b.append(", \"opacityEvents\": "), st.opacityEv, "Opacity");
+        glitches(b, st.glitches);
+        distortions(b, st.distortions);
+        b.append(" }");
     }
 
     /** §11.12: the shape, radius or points, the centre; angle, opacity, times and events only when used. */
@@ -1433,13 +1918,13 @@ public final class Doc {
         } else {
             b.append(", \"radius\": ").append(num(v.radius));
         }
-        b.append(", \"x\": ").append(num(v.x)).append(", \"y\": ").append(num(v.y));
+        b.append(", \"x\": ").append(num(v.x + LaneLayout.TILE_CENTRE)).append(", \"y\": ").append(num(v.y));
         if (v.rotation != 0f) b.append(", \"rotation\": ").append(num(v.rotation));
         if (v.opacity != 1f) b.append(", \"opacity\": ").append(num(v.opacity));
         if (Float.isFinite(v.start)) b.append(", \"startTime\": ").append(num(v.start));
         if (Float.isFinite(v.end)) b.append(", \"endTime\": ").append(num(v.end));
         // the centre's events have no type of their own (the game writes none either)
-        if (!v.xEv.isEmpty()) events(b.append(", \"xEvents\": "), v.xEv, null);
+        if (!v.xEv.isEmpty()) events(b.append(", \"xEvents\": "), toFrame(v.xEv), null);
         if (!v.yEv.isEmpty()) events(b.append(", \"yEvents\": "), v.yEv, null);
         if (!v.rotEv.isEmpty()) events(b.append(", \"rotationEvents\": "), v.rotEv, "Rotation");
         if (!v.opacityEv.isEmpty()) events(b.append(", \"opacityEvents\": "), v.opacityEv, "Opacity");
@@ -1449,8 +1934,13 @@ public final class Doc {
     }
 
     private static void note(StringBuilder b, DNote n) {
+        if (n.floating && n.canFloat()) {
+            floating(b, n);
+            return;
+        }
         b.append("    { \"type\": \"").append(n.type.json).append("\", \"line\": \"").append(n.line.json).append('"');
-        if (n.inLane()) b.append(", \"lane\": ").append(n.lane);
+        boolean placed = n.inLane();
+        if (placed) b.append(", \"x\": ").append(num(n.x));
         b.append(", \"judgement\": ").append(num(n.judgement));
         boolean sus = n.sustained();
         if (sus) {
@@ -1459,24 +1949,29 @@ public final class Doc {
             b.append(", \"height\": ").append(num(Math.max(0f, n.height)));
         }
         b.append(", \"appearance\": ").append(num(appearanceOf(n)));
-        // two finite numbers, only when not the origin (ChartMapper.write does the same)
+        // two finite numbers, only when not the origin, on every kind of key (ChartFormatV5 does the same)
         if (n.pivotX != 0f || n.pivotY != 0f) b.append(", \"pivot\": [").append(num(n.pivotX)).append(", ")
             .append(num(n.pivotY)).append(']');
         // only on a TIDE, a TIDE STREAM or their mines and only when moving (ChartFormatV5 does the same)
         if (!n.inLane() && n.waveSpeed != 0f) b.append(", \"waveSpeed\": ").append(num(n.waveSpeed));
-        if (n.inLane() && n.offsetX != 0f) b.append(", \"offsetX\": ").append(num(n.offsetX));
         b.append(", \"MovementEvents\": ");
         events(b, n.move, "Movement", n);
         b.append(", \"RotationEvents\": ");
         events(b, n.rot, "Rotation");
-        if (n.inLane() && !n.offEv.isEmpty()) {
-            b.append(", \"offsetXEvents\": ");
-            events(b, n.offEv, "OffsetX");
+        if (placed && !n.xEv.isEmpty()) {
+            b.append(", \"xEvents\": ");
+            events(b, n.xEv, "X");
         }
+        // 叠加层 (game 7.177), only when there are some (ChartFormatV5 does the same)
+        if (placed && !n.xLay.isEmpty()) events(b.append(", \"xLayers\": "), n.xLay, null);
+        if (!n.posLay.isEmpty()) events(b.append(", \"positionLayers\": "), n.posLay, null);
+        if (!n.rotLay.isEmpty()) events(b.append(", \"rotationLayers\": "), n.rotLay, null);
         // the orbit replaces the pivot; its moves only with it (ChartFormatV5 does the same)
-        if (n.inLane() && n.orbit) {
-            b.append(", \"orbit\": [").append(num(n.orbitX)).append(", ").append(num(n.orbitY)).append(']');
-            if (!n.orbXEv.isEmpty()) events(b.append(", \"orbitXEvents\": "), n.orbXEv, "OrbitX");
+        if (placed && n.orbit) {
+            // the working text keeps orbit and veil x in the 0–1920 frame (the game reads it so)
+            b.append(", \"orbit\": [").append(num(n.orbitX + LaneLayout.TILE_CENTRE)).append(", ").append(num(n.orbitY))
+                .append(']');
+            if (!n.orbXEv.isEmpty()) events(b.append(", \"orbitXEvents\": "), toFrame(n.orbXEv), "OrbitX");
             if (!n.orbYEv.isEmpty()) events(b.append(", \"orbitYEvents\": "), n.orbYEv, "OrbitY");
             if (!Float.isNaN(n.orbitRadius)) b.append(", \"orbitRadius\": ").append(num(n.orbitRadius));
             if (!n.orbRadEv.isEmpty()) events(b.append(", \"orbitRadiusEvents\": "), n.orbRadEv, "OrbitRadius");
@@ -1509,6 +2004,30 @@ public final class Doc {
             }
             b.append(tr.size() > 1 ? " ]" : "");
         }
+        glitches(b, n.glitches);
+        distortions(b, n.distortions);
+        b.append(" }");
+    }
+
+    /**
+     * A floating key in the v4 working text (CHART_FORMAT §11.6): {@code "float": true}, its centre, its size and
+     * appearance only when written, its chain, then its x / y / size / fill events and opacity; nothing of a line.
+     */
+    private static void floating(StringBuilder b, DNote n) {
+        b.append("    { \"type\": \"").append(n.type.json).append("\", \"float\": true, \"x\": ").append(num(n.x))
+            .append(", \"y\": ").append(num(n.y));
+        if (Float.isFinite(n.size) && n.size > 0f) b.append(", \"size\": ").append(num(n.size));
+        b.append(", \"judgement\": ").append(num(n.judgement));
+        if (n.type == NoteType.HOLD) b.append(", \"duration\": ").append(num(n.duration > 0f ? n.duration : 0.25f));
+        else if (n.type == NoteType.MINE && n.duration > 0f) b.append(", \"duration\": ").append(num(n.duration));
+        if (Float.isFinite(n.appearance)) b.append(", \"appearance\": ").append(num(n.appearance));
+        if (n.chain != null && n.type == NoteType.DRAG) b.append(", \"chain\": ").append(str(n.chain));
+        if (n.fake) b.append(", \"fake\": true");
+        if (!n.xEv.isEmpty()) events(b.append(", \"xEvents\": "), n.xEv, "X");
+        if (!n.yEv.isEmpty()) events(b.append(", \"yEvents\": "), n.yEv, null);
+        if (!n.sizeEv.isEmpty()) events(b.append(", \"sizeEvents\": "), n.sizeEv, null);
+        if (!n.fillEv.isEmpty()) events(b.append(", \"fillEvents\": "), n.fillEv, null);
+        if (!n.alpha.isEmpty()) events(b.append(", \"DisappearEvents\": "), n.alpha, "Opacity");
         glitches(b, n.glitches);
         distortions(b, n.distortions);
         b.append(" }");
@@ -1576,6 +2095,13 @@ public final class Doc {
         events(b, list, type, null);
     }
 
+    /** @return a floating key's channel at beat {@code t}: events hold their end values; before the first, base */
+    private static float at(List<Ev> list, float t, float base) {
+        Ev h = null;
+        for (Ev e : list) if (e.start <= t && (h == null || e.start >= h.start)) h = e;
+        return h == null ? base : h.valueAt(t);
+    }
+
     /** Writes an event list; {@code fallOf} (movement only) marks its absolute default falls {@code "rel": false}. */
     private static void events(StringBuilder b, List<Ev> list, String type, DNote fallOf) {
         if (list.isEmpty()) {
@@ -1593,6 +2119,7 @@ public final class Doc {
             if (e.rel) b.append(", \"rel\": true");
             else if (fallOf != null && fallOf.defaultFall(e)) b.append(", \"rel\": false");
             if (Float.isFinite(e.flow)) b.append(", \"flow\": ").append(num(e.flow));
+            if (e.link != null) b.append(", \"link\": ").append(e.link.json());
             b.append(" }");
         }
         b.append(']');

@@ -12,14 +12,18 @@ import android.view.Gravity;
 import android.view.WindowManager;
 import android.webkit.MimeTypeMap;
 import android.view.inputmethod.EditorInfo;
+import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.backends.android.AndroidApplication;
 import com.badlogic.gdx.files.FileHandle;
+import org.kelvinizer.charter.Im;
 import org.kelvinizer.charter.Platform;
 
 import java.io.File;
@@ -55,6 +59,61 @@ final class AndroidPlatform implements Platform {
     AndroidPlatform(AndroidApplication app) {
         this.app = app;
         app.addAndroidEventListener(this::picked);
+    }
+
+    /** A number box with the {@code /} hint and, for beats, 播放头 / +1/4 / −1/4 buttons above the keyboard. */
+    @Override
+    public void numberInput(String title, String value, String hint, boolean beats, Consumer<String> done) {
+        app.runOnUiThread(() -> {
+            float dp = app.getResources().getDisplayMetrics().density;
+            int pad = Math.round(20f * dp);
+            LinearLayout box = new LinearLayout(app);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding(pad, pad / 2, pad, 0);
+            EditText input = new EditText(app);
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            input.setSingleLine(true);
+            input.setText(value);
+            input.selectAll();
+            box.addView(input);
+            TextView note = new TextView(app);
+            note.setText(hint);
+            note.setTextSize(12f);
+            box.addView(note);
+            if (beats) {
+                LinearLayout row = new LinearLayout(app);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                String[] names = {"播放头", "+1/4", "−1/4"};
+                for (int i = 0; i < names.length; i++) {
+                    Button b = new Button(app);
+                    b.setText(names[i]);
+                    b.setAllCaps(false);
+                    float by = i == 1 ? 0.25f : -0.25f;
+                    boolean head = i == 0;
+                    b.setOnClickListener(v -> {
+                        input.setText(head ? "/" : Im.nudge(input.getText().toString(), by));
+                        input.setSelection(input.length());
+                    });
+                    row.addView(b, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                }
+                box.addView(row);
+            }
+            AlertDialog dialog = new AlertDialog.Builder(app)
+                .setTitle(title)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, (d, which) -> {
+                    String text = input.getText().toString();
+                    Gdx.app.postRunnable(() -> done.accept(text));
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+            dialog.setOnShowListener(d -> {
+                input.requestFocus();
+                if (dialog.getWindow() != null)
+                    dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+            });
+            dialog.show();
+        });
     }
 
     @Override

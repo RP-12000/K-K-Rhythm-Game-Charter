@@ -7,11 +7,13 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
 import org.kelvinizer.elements.Chart;
+import org.kelvinizer.elements.Floating;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteOrbit;
 import org.kelvinizer.elements.NoteType;
+import org.kelvinizer.elements.Stroke;
 import org.kelvinizer.elements.Veil;
 import org.kelvinizer.gameplay.CharterPreview;
 import org.kelvinizer.gameplay.Field;
@@ -20,7 +22,6 @@ import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.ui.Theme;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -37,11 +38,11 @@ final class EditorScreen implements CharterApp.View {
     // ---- layout (top-left based on the 1920 × 1080 canvas, or the tablet's 1344 × 840)
     private static final boolean TAB = Gfx.TABLET;
     /**
-     * The preview: the game's 16 : 10 reference frame (1920 × 1200, Kelvin 2026-10-19) at scale {@link #K},
-     * from (92, 68) where the 16 : 9 preview started; the inspector takes the width the narrower frame frees.
-     * On a tablet it is 744 × 465, so that the inspector keeps the desktop's 518 width.
+     * The preview: the game's 16 : 10 reference frame (1920 × 1200, Kelvin 2026-10-19) at scale {@link #K}. Since the
+     * new layout (2026-11-06) it sits right of 图层 and under the tool row, its right edge where it was, so that the
+     * inspector keeps its 518 width: 1152 × 720 from (222, 102) (scale 0.6), on a tablet 656 × 410 from (160, 100).
      */
-    static final float PH = TAB ? 465f : 801f, PW = PH * 1.6f, PX = TAB ? 72f : 92f, PY = TAB ? 64f : 68f,
+    static final float PH = TAB ? 410f : 720f, PW = PH * 1.6f, PX = TAB ? 160f : 222f, PY = TAB ? 100f : 102f,
         K = PW / 1920f;
     /**
      * World y of the preview's top edge: the preview fits the game's field to a 1920 × 1200 world centred at
@@ -50,12 +51,13 @@ final class EditorScreen implements CharterApp.View {
     static final float WTOP = Field.WORLD_CY + Field.REF_H * 0.5f;
     /**
      * The timeline and status bar end at {@link #TR}, where the inspector starts, 28 px right of the preview (1402;
-     * 826 on a tablet, under the touch bar {@link #AB_Y}, with taller rows for fingers).
+     * 826 on a tablet, under the touch bar {@link #AB_Y}, with taller rows for fingers). Its rows: audio, the upper
+     * line's keys, the floating keys (悬浮, each at its height), the lower line's keys, 场地.
      */
     static final float TX = TAB ? 136f : 150f, TR = Math.round(PX + PW) + (TAB ? 10f : 28f), TW = TR - TX,
-        TL_TOP = TAB ? 589f : 882f, TL_BOTTOM = TAB ? 836f : 1052f;
-    static final float R_AUDIO = TL_TOP + 4f, R_UP = R_AUDIO + 34f, R_UP_H = TAB ? 64f : 38f,
-        R_LOW = R_UP + R_UP_H + 4f, R_LOW_H = TAB ? 68f : 42f;
+        TL_TOP = TAB ? 570f : 830f, TL_BOTTOM = TAB ? 836f : 1052f;
+    static final float R_AUDIO = TL_TOP + 4f, R_UP = R_AUDIO + 34f, R_UP_H = TAB ? 48f : 38f,
+        R_FLT = R_UP + R_UP_H + 4f, R_FLT_H = TAB ? 44f : 48f, R_LOW = R_FLT + R_FLT_H + 4f, R_LOW_H = TAB ? 52f : 42f;
     static final float R_FIELD = R_LOW + R_LOW_H + 2f, R_FIELD_H = TAB ? 34f : 22f, R_RULER = R_FIELD + R_FIELD_H + 2f;
     /** The tablet's touch bar under the preview (undo, copy, delete, …: what the keyboard does on the desktop). */
     private static final float AB_Y = PY + PH + 8f, AB_H = 44f;
@@ -66,16 +68,21 @@ final class EditorScreen implements CharterApp.View {
         SB_W = 56f, SB_H = TAB ? AB_H : 20f;
 
     /**
-     * Tools (Kelvin 2026-11-01): select (N), the eight note kinds (keys 1–8), 漩涡 (9) and 水帘 (0); lanes and
-     * lines live in the 场地 tab.
+     * Tools (Kelvin 2026-11-01): select (N), the eight note kinds (keys 1–8), Drag (G, game 7.177, under them),
+     * 漩涡 (9) and 水帘 (0); 悬浮 (B, game 7.185) makes 水滴 / 水流 / Drag float. The judgement lines, global scale and
+     * 坐标吸附 live in the 场地 tab.
      */
     static final int T_SELECT = 0, T_TAP = 1, T_HOLD = 2, T_MINE = 3, T_LMINE = 4, T_TIDE = 5, T_TSTREAM = 6,
-        T_TMINE = 7, T_TSMINE = 8, T_VEIL = 9, T_CURTAIN = 10;
-    private static final String[] TOOL_NAMES = {"选择", "水滴", "水流", "水雷", "轨道水雷", "浪花", "潮汐", "浪花水雷",
-        "潮汐水雷", "漩涡", "水帘"};
-    private static final String[] TOOL_KEYS = {"N", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
-    private static final float[] TOOL_Y = {64f, 124f, 172f, 220f, 268f, 316f, 364f, 412f, 460f, 520f, 568f};
-    private static final float TOOL_H = 46f;
+        T_TMINE = 7, T_TSMINE = 8, T_VEIL = 9, T_CURTAIN = 10, T_DRAG = 11, T_FLOAT = 12;
+    private static final String[] TOOL_NAMES = {"选择", "水滴", "水流", "水雷", "长水雷", "浪花", "潮汐", "浪花水雷",
+        "潮汐水雷", "漩涡", "水帘", "Drag", "悬浮"};
+    private static final String[] TOOL_KEYS = {"N", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "G", "B"};
+    /** The tool row over 图层 and the preview (2026-11-06): this order, a gap between the groups. */
+    private static final int[] TOOL_ORDER = {T_SELECT, T_TAP, T_HOLD, T_DRAG, T_FLOAT, T_MINE, T_LMINE, T_TIDE,
+        T_TSTREAM, T_TMINE, T_TSMINE, T_VEIL, T_CURTAIN};
+    private static final float TOOL_X = TAB ? 8f : 12f, TOOL_Y = TAB ? 58f : 60f, TOOL_H = 38f;
+    /** 图层, left of the preview and as high (on a tablet down to the end of the touch bar under it). */
+    private static final float LX = TOOL_X, LY = PY, LW = PX - 12f - LX, LH = TAB ? PH + 52f : PH;
     static final int[] SNAPS = {1, 2, 3, 4, 6, 8, 12, 16, 0};
     static final String[] SNAP_LABELS = {"1/1", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16", "关"};
     static final float[] SPEEDS = {0.25f, 0.5f, 0.75f, 1f};
@@ -138,7 +145,10 @@ final class EditorScreen implements CharterApp.View {
     // ---- drag state
     private static final int D_NONE = 0, D_PLACE = 1, D_PRESS_NOTE = 2, D_MOVE = 3, D_LENGTH = 4, D_SEEK = 7, D_BOX = 8,
         D_TL_PRESS = 9, D_TL_MOVE = 10, D_PAN = 11,
-        D_PV_START = 12, D_PV_END = 13, D_VEIL = 14, D_VEIL_PT = 15;
+        D_PV_START = 12, D_PV_END = 13, D_VEIL = 14, D_VEIL_PT = 15, D_FLOAT_MOVE = 16, D_STROKE_PT = 17;
+    /** The custom line and the point of it being dragged (线条 tab). */
+    private Doc.DStroke dStroke;
+    private int dStrokePt;
     /** Veil handles: a polygon point's index, the circle's radius dot, or none. */
     private static final int H_NONE = -1, H_RADIUS = -2;
     private int drag;
@@ -149,7 +159,15 @@ final class EditorScreen implements CharterApp.View {
     private float dPv0, dPv1;
     private boolean dMarked;
     private float dBeat, dApplied, dPressRx, dPressRy;
-    private int dLane, dLaneApplied;
+    /** Placing: the new key's x; moving: the press's x and the x shift applied so far (centre-line units). */
+    private float dX, dXApplied;
+    /**
+     * 坐标吸附 (Kelvin 2026-11-05; finer and 60 by default from 11-06): new and moved keys land on multiples of this x
+     * (floating keys' y and line points too); 0 = whole units.
+     */
+    float xStep = 60f;
+    /** Beats in a bar for the bar lines of the timeline and the placement grid (4/4; Kelvin 2026-11-06). */
+    static final int BAR_BEATS = 4;
     private Line dLine;
     private Doc.DNote dNote;
     /** The dragged veil, its handle and the centre shift applied so far (reference units). */
@@ -159,8 +177,7 @@ final class EditorScreen implements CharterApp.View {
     /** The veil frame {@link #veilFrame} last set: screen centre, cos / sin of the angle, pixels per unit. */
     private float vcx, vcy, vco, vsn, vks;
     private final ArrayList<Doc.DNote> dSel = new ArrayList<>();
-    private final HashMap<Integer, Integer> dLanes = new HashMap<>();
-    /** Field-row bars of this frame: {x0, x1, lane id or LINE_BAR − line channel}. */
+    /** Field-row bars of this frame: {x0, x1, LINE_BAR − line channel}. */
     static final int LINE_BAR = -1000;
     private final ArrayList<float[]> bars = new ArrayList<>();
     private final com.badlogic.gdx.math.Vector2 pivot = new com.badlogic.gdx.math.Vector2();
@@ -222,8 +239,9 @@ final class EditorScreen implements CharterApp.View {
         pb.seek(s.beatToMs(b));
     }
 
-    static String laneName(int id) {
-        return id > 0 ? "+" + id : Integer.toString(id);
+    /** @return a key's x for labels: "x 0", "x −360", "x +120". */
+    static String xName(float x) {
+        return "x " + (x > 0f ? "+" : "") + Im.fmt(x);
     }
 
     static String lineZh(Line l) {
@@ -246,11 +264,16 @@ final class EditorScreen implements CharterApp.View {
             listenTo = Double.NaN;
         }
         s.update();
+        if (s.unlinked > 0) {                                       // 同步链接 let go by the last change
+            im.toast(s.unlinked + " 段链接的运动器单独改过（或来源删了），已和来源断开");
+            s.unlinked = 0;
+        }
         Chart shown = overlays ? s.chart : s.liveChart();
         if (pv.chart() != shown) pv.setChart(shown);
         checks.update(s, pv);
         double pos = pb.pos();
         beat = (float) s.msToBeat(pos);
+        im.slashBeat = snap(beat);                                  // what "/" means in a 拍 field
         pv.setLive(!overlays, s.diff);
         pv.seek(pos, dt, pb.playing());
         follow();
@@ -270,7 +293,8 @@ final class EditorScreen implements CharterApp.View {
         if (statsOpen) im.block(STATS_X, STATS_Y, StatsPanel.W, StatsPanel.H);
         preview();
         timeline();
-        rail();
+        toolRow();
+        layers(dt);
         if (TAB) touchBar();
         else statusBar();
         insp.draw();
@@ -330,6 +354,10 @@ final class EditorScreen implements CharterApp.View {
             else if (im.key(Input.Keys.C)) copy(false);
             else if (im.key(Input.Keys.X)) copy(true);
             else if (im.key(Input.Keys.V)) paste();
+            else if (im.key(Input.Keys.F)) {                // 翻转, as M / Shift+M (MajdataEdit's keys, Kelvin 11-06)
+                if (im.shift) mirrorUpDown();
+                else mirror();
+            } else if (im.key(Input.Keys.R)) rotateFloating(im.shift ? 45f : -45f);   // 旋转 ±45°, floating keys
             else if (im.key(Input.Keys.A)) {
                 s.sel.clear();
                 for (Doc.DNote n : s.doc.notes) s.sel.add(n.uid);
@@ -342,7 +370,10 @@ final class EditorScreen implements CharterApp.View {
             if (im.key(Input.Keys.NUM_0 + t) || im.key(Input.Keys.NUMPAD_0 + t)) setTool(t);
         }
         if (im.key(Input.Keys.NUM_0) || im.key(Input.Keys.NUMPAD_0)) setTool(T_CURTAIN);
+        if (im.key(Input.Keys.G)) setTool(T_DRAG);
+        if (im.key(Input.Keys.B)) floatMode = !floatMode;
         if (im.key(Input.Keys.TAB)) s.placeLine = s.placeLine == Line.UPPER ? Line.LOWER : Line.UPPER;
+        if (im.key(Input.Keys.K)) autoKey = !autoKey;
         if (im.key(Input.Keys.FORWARD_DEL) || im.key(Input.Keys.DEL)) {
             if (veilTab() && s.veilSel != 0) deleteVeil();
             else deleteSel();
@@ -493,10 +524,6 @@ final class EditorScreen implements CharterApp.View {
         for (Doc.DNote c : clipboard) {
             Doc.DNote n = c.copy(false);
             n.retime(at - base);
-            if (n.inLane() && s.doc.lane(n.lane) == null) {
-                if (s.doc.laneCount == 0) s.doc.ensureLane(n.lane);
-                else n.lane = s.doc.lanes.get(s.doc.lanes.size() / 2).id;
-            }
             s.doc.notes.add(n);
             s.sel.add(n.uid);
         }
@@ -512,6 +539,7 @@ final class EditorScreen implements CharterApp.View {
         s.changed(false);
     }
 
+
     /** Deletes the selected veil or curtain (漩涡 / 水帘 page). */
     void deleteVeil() {
         Doc.DVeil v = selVeil();
@@ -522,7 +550,7 @@ final class EditorScreen implements CharterApp.View {
         s.changed(false);
     }
 
-    /** Mirrors the selected notes left ↔ right (lane order, rotation and the pivot's x). */
+    /** Mirrors the selected notes left ↔ right (x about the centre line, rotation and the pivot's x). */
     void mirror() {
         ArrayList<Doc.DNote> sel = s.selected();
         if (sel.isEmpty()) {
@@ -530,25 +558,30 @@ final class EditorScreen implements CharterApp.View {
             return;
         }
         s.mark();
-        int count = s.doc.lanes.size();
         for (Doc.DNote n : sel) {
-            if (n.inLane()) {
-                int i = s.doc.laneIndex(n.lane);
-                if (i >= 0) n.lane = s.doc.lanes.get(count - 1 - i).id;
-            }
+            n.x = -n.x;
             for (Doc.Ev e : n.rot) {
                 e.from = -e.from;
                 e.to = -e.to;
             }
-            for (Doc.Ev e : n.offEv) {
+            for (Doc.Ev e : n.xEv) {
                 e.from = -e.from;
                 e.to = -e.to;
             }
-            // the orbit centre is a point of the 1920-wide reference frame
-            n.orbitX = Field.REF_W - n.orbitX;
+            // layers add to x and the rotation, so they turn over with them
+            for (Doc.Ev e : n.xLay) {
+                e.from = -e.from;
+                e.to = -e.to;
+            }
+            for (Doc.Ev e : n.rotLay) {
+                e.from = -e.from;
+                e.to = -e.to;
+            }
+            // the orbit centre's x is measured from the centre line too
+            n.orbitX = -n.orbitX;
             for (Doc.Ev e : n.orbXEv) {
-                e.from = Field.REF_W - e.from;
-                e.to = Field.REF_W - e.to;
+                e.from = -e.from;
+                e.to = -e.to;
             }
             // the orbit's angle (0° right, counter-clockwise) mirrors to 180° − a
             if (!Float.isNaN(n.orbitAngle)) n.orbitAngle = 180f - n.orbitAngle;
@@ -558,13 +591,12 @@ final class EditorScreen implements CharterApp.View {
             }
             n.pivotX = -n.pivotX;
             n.waveSpeed = -n.waveSpeed;
-            n.offsetX = -n.offsetX;
         }
         s.changed(false);
     }
 
     /**
-     * Mirrors the selected notes top ↔ bottom (Kelvin 2026-10-22): sky ↔ ground with the same lane, beat and fall.
+     * Mirrors the selected notes top ↔ bottom (Kelvin 2026-10-22): sky ↔ ground with the same x, beat and fall.
      * A sky note's frame is the ground one turned 180°, so the rotation and the pivot's x change sign as well.
      */
     void mirrorUpDown() {
@@ -575,8 +607,21 @@ final class EditorScreen implements CharterApp.View {
         }
         s.mark();
         for (Doc.DNote n : sel) {
+            if (n.floating) {
+                // a floating key's height is measured up from the bottom of the 1200-high frame
+                n.y = Field.REF_H - n.y;
+                for (Doc.Ev e : n.yEv) {
+                    e.from = Field.REF_H - e.from;
+                    e.to = Field.REF_H - e.to;
+                }
+                continue;
+            }
             n.line = n.line == Line.UPPER ? Line.LOWER : Line.UPPER;
             for (Doc.Ev e : n.rot) {
+                e.from = -e.from;
+                e.to = -e.to;
+            }
+            for (Doc.Ev e : n.rotLay) {
                 e.from = -e.from;
                 e.to = -e.to;
             }
@@ -697,6 +742,14 @@ final class EditorScreen implements CharterApp.View {
     private boolean noteBox(Doc.DNote d, float b, Rectangle r) {
         Note n = s.note(d);
         if (n == null || s.chart == null) return false;
+        if (d.floating) {
+            // a floating key (game 7.185): a square about its circle from when it shows to its end, so a key just put
+            // down at the playhead can still be picked
+            if (!n.floats() || b < n.floating().appear() || b > d.end() || !pv.floatAt(n, b, fk)) return false;
+            float h = Math.max(fk[2], 14f);
+            r.set(fk[0] - h, fk[1] - h, 2f * h, 2f * h);
+            return true;
+        }
         if (!(b < d.judgement || (d.sustained() && b < d.end()))) return false;
         float pos = b < d.judgement ? n.positionAt(b) : 0f;
         if (pos >= Note.HIDDEN_POSITION - 1f || pos < -16000f / 9f) return false;
@@ -707,13 +760,11 @@ final class EditorScreen implements CharterApp.View {
         float y = up ? ly - far : ly + far;
         float x0, w;
         if (d.inLane()) {
-            int i = lay.indexOf(d.lane);
-            if (i < 0) return false;
-            w = Math.max(pv.headWidth(lay.width(i)), 30f);
-            x0 = lay.centre(i) + n.offsetXAt(b) * Field.kx() - w * 0.5f;
+            w = Math.max(pv.headWidth(lay.noteWidth(n)), 30f);
+            x0 = lay.noteX(n, b) - w * 0.5f;
         } else {
-            x0 = lay.fieldLeft();
-            w = lay.fieldRight() - x0;
+            x0 = lay.windowLeft();                              // a key without x spans the window (laneless)
+            w = lay.windowRight() - x0;
         }
         float h = Math.max(pv.noteHeight(), 28f);
         float tail = d.sustained() ? n.tailHeightAt(b) : 0f;
@@ -749,6 +800,7 @@ final class EditorScreen implements CharterApp.View {
      *         180° on the sky line, as the game places it at note size 1
      */
     private boolean pivotPoint(Doc.DNote d, float b, com.badlogic.gdx.math.Vector2 out) {
+        if (d.floating) return false;                           // a floating key does not turn
         Note n = s.note(d);
         if (n == null || s.chart == null) return false;
         if (!(b < d.judgement || (d.sustained() && b < d.end()))) return false;
@@ -758,14 +810,12 @@ final class EditorScreen implements CharterApp.View {
         LaneLayout lay = e.layout();
         float x, h;
         if (d.inLane()) {
-            int i = lay.indexOf(d.lane);
-            if (i < 0) return false;
-            x = lay.centre(i) + n.offsetXAt(b) * Field.kx();
+            x = lay.noteX(n, b);
             h = d.type == NoteType.MINE ? pv.mineHeight() : pv.noteHeight();
         } else {
-            float l = Math.max(lay.fieldLeft(), LaneLayout.VIEW_LEFT),
-                r = Math.min(lay.fieldRight(), LaneLayout.VIEW_RIGHT);
-            x = l < r ? 0.5f * (l + r) : 0.5f * (lay.fieldLeft() + lay.fieldRight());
+            float l = Math.max(lay.windowLeft(), LaneLayout.VIEW_LEFT),
+                r = Math.min(lay.windowRight(), LaneLayout.VIEW_RIGHT);
+            x = l < r ? 0.5f * (l + r) : 0.5f * (lay.windowLeft() + lay.windowRight());
             h = pv.tideHeight();
         }
         NoteOrbit o = n.orbit();
@@ -814,14 +864,52 @@ final class EditorScreen implements CharterApp.View {
         return s.doc.speed(beat);
     }
 
-    private void laneMark(LaneLayout lay, int id, float upY, float lowY, float fill) {
-        int i = lay.indexOf(id);
-        if (i < 0) return;
-        float x0 = ux(lay.left(i)), w = lay.width(i) * K;
-        float yt = uy(Math.max(upY, lowY)), yb = uy(Math.min(upY, lowY));
-        g.rect(x0, yt, w, yb - yt, Gfx.GND, fill);
-        g.line(x0, yt, x0, yb, 2f, Gfx.GND, 0.8f);
-        g.line(x0 + w, yt, x0 + w, yb, 2f, Gfx.GND, 0.8f);
+    /** @return the screen x (preview world units) of centre-line x {@code x} now. */
+    private static float screenX(LaneLayout lay, float x) {
+        return lay.frameAxis() + lay.frameScale() * x;
+    }
+
+    /** @return the centre-line x under preview world x {@code rx}, unsnapped (0 while a scale event sits at 0). */
+    private static float refXAt(LaneLayout lay, float rx) {
+        float k = lay.frameScale();
+        return Math.abs(k) > 1e-4f ? (rx - lay.frameAxis()) / k : 0f;
+    }
+
+    /** @return {@code x} on the horizontal snap (坐标吸附, {@link #xStep}; whole units when it is off). */
+    float snapX(float x) {
+        return xStep > 0f ? Math.round(x / xStep) * xStep : Math.round(x);
+    }
+
+    /**
+     * @return {@code x} snapped for a key judged at {@code beat}: while the chart has fixed lanes there (定轨, game
+     *         7.184) on the lane grid of {@link #laneDiv()} (half lanes: a lane's centre or the divider between two;
+     *         inside the field), else {@link #snapX(float)}; with 坐标吸附 off, whole units either way
+     */
+    float snapX(float x, float beat) {
+        int k = xStep > 0f ? s.doc.lanesAt(beat) : 0;
+        if (k <= 0) return snapX(x);
+        int n = laneDiv();
+        float x0 = Chart.fixedLaneX(1f, k), h = (Chart.fixedLaneX(2f, k) - x0) / n;
+        return Chart.fixedLaneX(1f + (float) MathUtils.clamp(Math.round((x - x0) / h), 0, n * (k - 1)) / n, k);
+    }
+
+    /** @return the steps a fixed lane is cut into for snapping: 2 (half lanes) at 120 and up, 4 at 60, else 8. */
+    int laneDiv() {
+        return xStep >= 120f ? 2 : xStep >= 60f ? 4 : 8;
+    }
+
+    /**
+     * @return where ‹ › move a key at {@code x} judged at {@code beat} ({@code dir} −1 left, +1 right): the next point
+     *         of the lane grid ({@link #laneDiv()}) that way while the chart has fixed lanes there (定轨), else
+     *         {@link #xStep} (half a key with 坐标吸附 off) further
+     */
+    float nudgeX(float x, float beat, int dir) {
+        int k = xStep > 0f ? s.doc.lanesAt(beat) : 0;
+        if (k <= 0) return x + dir * (xStep > 0f ? xStep : Checks.KEY_W / 2f);
+        int n = laneDiv();
+        float x0 = Chart.fixedLaneX(1f, k), u = (x - x0) / ((Chart.fixedLaneX(2f, k) - x0) / n);
+        int m = dir > 0 ? MathUtils.floor(u + 1e-3f) + 1 : MathUtils.ceil(u - 1e-3f) - 1;
+        return Chart.fixedLaneX(1f + (float) MathUtils.clamp(m, 0, n * (k - 1)) / n, k);
     }
 
     /** Picks a tool; 漩涡 / 水帘 also open their tab, whose list and card they work with. */
@@ -847,6 +935,7 @@ final class EditorScreen implements CharterApp.View {
             case T_LMINE: return NoteType.MINE;
             case T_TMINE:
             case T_TSMINE: return NoteType.TIDE_MINE;
+            case T_DRAG: return NoteType.DRAG;
             default: return NoteType.UNIVERSAL;
         }
     }
@@ -857,11 +946,11 @@ final class EditorScreen implements CharterApp.View {
     }
 
     private boolean placing() {
-        return tool >= T_TAP && tool <= T_TSMINE;
+        return tool >= T_TAP && tool <= T_TSMINE || tool == T_DRAG;
     }
 
-    /** @return true for the tools whose notes take a line's whole zone (the four 浪花 kinds), not a lane. */
-    private boolean laneless() {
+    /** @return true for the tools whose notes take a line's whole zone (the four 浪花 kinds), not an x. */
+    private boolean wholeLine() {
         return tool >= T_TIDE && tool <= T_TSMINE;
     }
 
@@ -890,37 +979,41 @@ final class EditorScreen implements CharterApp.View {
             hot = null;                                         // on the 漩涡 page the veil is on top
             im.cursor(Cursor.SystemCursor.Hand);
         }
+        Doc.DStroke line = strokePage();
+        if (ready && inCanvas && drag == D_NONE && line != null && strokeHandle(line) >= 0) {
+            hot = null;                                         // on the 线条 page its points are on top
+            im.cursor(Cursor.SystemCursor.Hand);
+        }
 
         if (ready) {
             float upY = e.lineY(Line.UPPER), lowY = e.lineY(Line.LOWER);
-            // selected lane
-            if (insp.tab == Inspector.FIELD) {
-                for (int id : s.lanePick) if (id != s.laneSel) laneMark(lay, id, upY, lowY, 0.05f);
-                if (s.laneSel != Session.NO_LANE) laneMark(lay, s.laneSel, upY, lowY, 0.07f);
-            }
             if (overlays) {
-                for (int i = 0; i < lay.count(); i++) {
-                    if (!lay.active(i)) continue;
-                    int id = lay.idAt(i);
-                    g.text(laneName(id), ux(lay.centre(i)), uy(Field.y(100f)), 14,
-                        id == s.laneSel || s.lanePick.contains(id) ? Gfx.GND : Gfx.INK3, 1);
+                // x ruler along the bottom: one mark per key width from the centre line (none cut by the edges)
+                for (int k = -6; k <= 6; k++) {
+                    float sx = screenX(lay, k * Checks.KEY_W);
+                    if (sx < LaneLayout.VIEW_LEFT + 30f || sx > LaneLayout.VIEW_RIGHT - 30f) continue;
+                    g.text(k == 0 ? "0" : (k > 0 ? "+" : "") + Math.round(k * Checks.KEY_W), ux(sx), uy(Field.y(36f)),
+                        12, k == 0 ? Gfx.INK2 : Gfx.INK3, 1);
                 }
-                float rEdge = PX + PW - 12f;
-                g.text("上线 upper · y " + Math.round(Field.refY(upY)), rEdge, uy(upY) + 15f, 12, Gfx.INK1, 2);
-                g.text("下线 lower · y " + Math.round(Field.refY(lowY)), rEdge, uy(lowY) - 12f, 12, Gfx.GND, 2);
+                float rEdge = PX + PW - 12f, minY = bTagY + 66f;   // keep the labels under the preview buttons
+                g.text("上线 upper · y " + Math.round(Field.refY(upY)), rEdge, Math.max(minY, uy(upY) + 15f), 12,
+                    Gfx.INK1, 2);
+                g.text("下线 lower · y " + Math.round(Field.refY(lowY)), rEdge, Math.max(minY, uy(lowY) - 12f), 12,
+                    Gfx.GND, 2);
                 if (placing()) grid(e, lay);
             }
             noteOverlays(hot);
             if (veilTab() && overlays) veilOverlays();
+            if (overlays) floatOverlays();
+            if (overlays && insp.tab == Inspector.STROKE) strokeOverlays();
             if (placing() && overlays && (drag == D_PLACE || (inCanvas && hot == null && drag == D_NONE))) {
                 if (drag == D_PLACE) {
                     float t1 = snap(beatAtRef(dLine, ry));
                     float dur = longTool() ? Math.max(0f, t1 - dBeat) : 0f;
-                    ghost(dBeat, dur, dLane, dLine);
-                } else {
-                    int i = lay.indexAtX(rx);
-                    if (i >= 0 || laneless()) ghost(snap(beatAtRef(s.placeLine, ry)), 0f,
-                        i >= 0 ? lay.idAt(i) : 0, s.placeLine);
+                    ghost(dBeat, dur, dX, dLine);
+                } else if (!floatGhost(rx, ry)) {
+                    float gb = snap(beatAtRef(s.placeLine, ry));
+                    ghost(gb, 0f, snapX(refXAt(lay, rx), gb), s.placeLine);
                 }
             }
         } else {
@@ -932,9 +1025,6 @@ final class EditorScreen implements CharterApp.View {
         // tag (not in 实机, whose score is there) and view buttons
         if (overlays) {
             String tag = "预览 · 第 " + String.format(Locale.ROOT, "%.2f", beat) + " 拍";
-            if (s.laneSel != Session.NO_LANE && insp.tab == Inspector.FIELD && lay.indexOf(s.laneSel) >= 0) {
-                tag += " · 轨道 " + laneName(s.laneSel) + " 宽 " + Math.round(lay.width(lay.indexOf(s.laneSel)));
-            }
             float tw = g.width(tag, 12) + 20f;
             g.box(PX + 12f, PY + 12f, tw, 24f, 4f, Gfx.BAR, Gfx.LINE);
             g.text(tag, PX + 22f, PY + 24f, 12, Gfx.INK3);
@@ -971,7 +1061,7 @@ final class EditorScreen implements CharterApp.View {
         float st = step() > 0f ? step() : 0.25f;
         float ly = e.lineY(s.placeLine);
         boolean up = s.placeLine == Line.UPPER;
-        float x0 = ux(lay.fieldLeft()), x1 = ux(lay.fieldRight());
+        float x0 = ux(lay.windowLeft()), x1 = ux(lay.windowRight());     // the whole window (laneless)
         Color c = up ? UP_INK : Gfx.GND;
         int k0 = (int) Math.ceil(beat / st - 1e-4), k1 = (int) Math.floor((beat + 2.2f) / st);
         if (k1 - k0 > 80) k1 = k0 + 80;
@@ -980,7 +1070,9 @@ final class EditorScreen implements CharterApp.View {
             float d = (b - beat) * spd();
             float y = uy(up ? ly - d : ly + d);
             boolean whole = Math.abs(b - Math.round(b)) < 1e-3f;
-            g.line(x0, y, x1, y, 1f, c, whole ? 0.22f : 0.09f);
+            boolean bar = whole && Math.floorMod(Math.round(b), BAR_BEATS) == 0;
+            g.line(x0, y, x1, y, bar ? 3f : whole ? 2f : 1f, c, bar ? 0.55f : whole ? 0.3f : 0.12f);
+            if (bar) g.text("第 " + (Math.floorDiv(Math.round(b), BAR_BEATS) + 1) + " 小节", x0 + 8f, y - 9f, 11, c);
         }
     }
 
@@ -989,7 +1081,7 @@ final class EditorScreen implements CharterApp.View {
         for (Doc.DNote n : s.doc.notes) {
             boolean sel = s.sel.contains(n.uid);
             Note gn = s.note(n);
-            boolean warn = gn != null && gn.usesDefaultApproach() && overlays;
+            boolean warn = gn != null && !gn.floats() && gn.usesDefaultApproach() && overlays;   // floating: no fall
             if (!sel && !warn && n != hot) continue;
             if (!noteBox(n, beat, box)) continue;
             float x = ux(box.x), y = uy(box.y + box.height), w = box.width * K, h = box.height * K;
@@ -1008,19 +1100,214 @@ final class EditorScreen implements CharterApp.View {
                 g.text("!", x + w + 2f, y - 2f, 12, Gfx.PRI_INK, 1);
             }
             if (n == one) {
-                String tip = n.nameZh() + (n.inLane() ? " · 轨 " + laneName(n.lane) : "") + " · 拍 "
-                    + Im.fmt(n.judgement);
+                String tip = n.nameZh() + (n.floating ? " · 悬浮 " + xName(n.x) + " · y " + Math.round(n.y)
+                    : n.inLane() ? " · " + xName(n.x) : "") + " · 拍 " + Im.fmt(n.judgement);
                 float tw = g.width(tip, 12) + 18f;
-                float tx = x + w + 14f > PX + PW - tw ? x - tw - 14f : x + w + 14f;
+                boolean left = x + w + 14f > PX + PW - tw;
+                float tx = left ? x - tw - 14f : x + w + 14f;
                 g.box(tx, y + h * 0.5f - 13f, tw, 26f, 4f, Gfx.BAR, Gfx.SEL_LINE);
                 g.text(tip, tx + 9f, y + h * 0.5f, 12, Gfx.INK1);
-                if (n.sustained()) {
+                if (n.sustained() && !n.floating) {
                     float fy = n.line == Line.UPPER ? uy(box.y) : y;
                     g.disc(x + w * 0.5f, fy, 6f, Color.WHITE);
                     g.text("拖动改时长", x + w * 0.5f + 12f, fy, 12, Gfx.INK1);
                 }
             }
         }
+    }
+
+    // ---- 悬浮键 (game 7.185, CHART_FORMAT §11)
+
+    /** 悬浮 (B): the 水滴, 水流, Drag, 水雷 and 长水雷 tools put floating keys at the pointer, judged at the playhead. */
+    boolean floatMode;
+    /** 自动关键帧 (K): dragging a floating key keys it at the playhead in its x / y events. */
+    boolean autoKey;
+    /** A floating key this frame ({@link CharterPreview#floatAt}): world x, y of its centre and its world radius. */
+    private final float[] fk = new float[3];
+
+    /** @return true when a click puts a floating key: 悬浮 is on and the tool's key can float */
+    private boolean floatPlacing() {
+        return floatMode && placing() && placeType().floats();
+    }
+
+    /** @return the reference x of world x {@code wx} for a floating key, snapped by 坐标吸附 (whole units when 关) */
+    private float floatX(LaneLayout lay, float wx) {
+        return snapX(refXAt(lay, wx));
+    }
+
+    /** @return the reference height of world y {@code wy} for a floating key, snapped like x, within 0–1200 */
+    private float floatY(float wy) {
+        float st = xStep > 0f ? xStep : 1f;
+        return MathUtils.clamp(Math.round(Field.refY(wy) / st) * st, 0f, Field.REF_H);
+    }
+
+    /** While placing floating keys: the circle a click puts at the pointer and what it is; false = not placing them. */
+    private boolean floatGhost(float rx, float ry) {
+        if (!floatPlacing()) return false;
+        LaneLayout lay = pv.engine().layout();
+        float x = floatX(lay, rx), y = floatY(ry);
+        NoteType t = placeType();
+        float r = 0.5f * Floating.defaultSize(t, longTool() ? 1f : 0f) * CharterPreview.floatScale(lay) * K;
+        float cx = ux(screenX(lay, x)), cy = uy(Field.y(y));
+        g.circle(cx, cy, r, 1.5f, t == NoteType.MINE ? Gfx.MINE : Color.WHITE);
+        g.text("点击放悬浮" + t.displayZh(longTool() && t != NoteType.HOLD) + "（" + xName(x) + " · y " + Math.round(y)
+            + " · 第 " + Im.fmt(snap(beat)) + " 拍）", cx, cy + r + 16f, 12, Gfx.INK2, 1);
+        return true;
+    }
+
+    /**
+     * 放悬浮键 (game 7.185 / 7.186): the tool's tap, STREAM (one beat), DRAG, mine or long mine (one beat) floating
+     * at (x, y), judged at the playhead and shown from the game's default (2 beats before).
+     */
+    private void placeFloating(float x, float y) {
+        Doc.DNote n = new Doc.DNote(placeType(), Line.LOWER, x, snap(beat));
+        n.toFloating(y);
+        if (longTool()) n.duration = 1f;                          // 水流 and 长水雷: one beat
+        s.mark();
+        s.doc.notes.add(n);
+        s.select(n, false);
+        s.changed(false);
+        insp.tab = Inspector.NOTE;
+    }
+
+    /**
+     * The selected floating key's path (轨迹) when it moves: its centre every 1/4 beat from when it shows to its end,
+     * bigger at the ends of its x / y events; and what 自动关键帧 does.
+     */
+    private void floatOverlays() {
+        Doc.DNote d = s.single();
+        Note n = d != null && d.floating ? s.note(d) : null;
+        if (n != null && n.floats() && !(d.xEv.isEmpty() && d.yEv.isEmpty())) {
+            float a = n.floating().appear();
+            for (int k = 0; k < 256 && a + k * 0.25f <= d.end() + 1e-3f; k++) {
+                if (pv.floatAt(n, a + k * 0.25f, fk)) g.disc(ux(fk[0]), uy(fk[1]), 2f, Gfx.TIDE, 0.7f);
+            }
+            for (List<Doc.Ev> l : java.util.Arrays.asList(d.xEv, d.yEv)) {
+                for (Doc.Ev e : l) if (pv.floatAt(n, e.end, fk)) g.disc(ux(fk[0]), uy(fk[1]), 4.5f, Gfx.TIDE);
+            }
+        }
+        if (autoKey) {
+            g.text("自动关键帧：拖悬浮键 = 在第 " + Im.fmt(snap(beat)) + " 拍建关键帧", PX + 12f, PY + PH - 14f, 12,
+                Gfx.TIDE);
+        }
+    }
+
+    /** Starts dragging the selected floating keys (the pressed one leads; keys on a line stay where they are). */
+    private void startFloatMove() {
+        drag = D_FLOAT_MOVE;
+        dVx = 0f;
+        dVy = 0f;
+        dSel.clear();
+        for (Doc.DNote n : s.selected()) if (n.floating) dSel.add(n);
+    }
+
+    /**
+     * Moves the dragged floating keys with the pointer, by 坐标吸附 steps; with 自动关键帧 (K) each gets a keyframe at
+     * the playhead in its x / y events instead ({@link #keyNudge}).
+     */
+    private void floatTo(float rx, float ry) {
+        LaneLayout lay = pv.engine().layout();
+        float st = xStep > 0f ? xStep : 1f;
+        float dx = Math.round((refXAt(lay, rx) - refXAt(lay, dPressRx)) / st) * st;
+        float dy = Math.round((Field.refY(ry) - Field.refY(dPressRy)) / st) * st;
+        if (dx == dVx && dy == dVy) return;
+        lazyMark();
+        float t = snap(beat);
+        for (Doc.DNote n : dSel) {
+            if (!autoKey) n.moveXY(dx - dVx, dy - dVy);
+            else {
+                if (dx != dVx) keyNudge(n.xEv, t, n.x, dx - dVx);
+                if (dy != dVy) keyNudge(n.yEv, t, n.y, dy - dVy);
+            }
+        }
+        dVx = dx;
+        dVy = dy;
+        s.changed(true);
+    }
+
+    /**
+     * 旋转 ±45° (Ctrl+R clockwise, Ctrl+Shift+R the other way; MajdataEdit's keys, Kelvin 2026-11-06): turns the
+     * selected floating keys about the middle of the selection (one key: about the middle of the screen, x 0 y 600).
+     * Keys on a line do not turn, and floating keys with x / y events stay put (their path would turn apart).
+     */
+    void rotateFloating(float deg) {
+        ArrayList<Doc.DNote> fl = new ArrayList<>();
+        int moving = 0;
+        for (Doc.DNote n : s.selected()) {
+            if (!n.floating) continue;
+            if (n.xEv.isEmpty() && n.yEv.isEmpty()) fl.add(n);
+            else moving++;
+        }
+        if (fl.isEmpty()) {
+            im.toast(moving > 0 ? "有横纵坐标事件的悬浮键不转" : "先选中悬浮键（线上的键不转）");
+            return;
+        }
+        float cx = 0f, cy = Floating.DEFAULT_Y;
+        if (fl.size() > 1) {
+            float x0 = Float.MAX_VALUE, x1 = -Float.MAX_VALUE, y0 = Float.MAX_VALUE, y1 = -Float.MAX_VALUE;
+            for (Doc.DNote n : fl) {
+                x0 = Math.min(x0, n.x);
+                x1 = Math.max(x1, n.x);
+                y0 = Math.min(y0, n.y);
+                y1 = Math.max(y1, n.y);
+            }
+            cx = (x0 + x1) * 0.5f;
+            cy = (y0 + y1) * 0.5f;
+        }
+        float c = MathUtils.cosDeg(deg), sn = MathUtils.sinDeg(deg);
+        s.mark();
+        for (Doc.DNote n : fl) {
+            float dx = n.x - cx, dy = n.y - cy;
+            n.x = Math.round(cx + dx * c - dy * sn);
+            n.y = Math.round(cy + dx * sn + dy * c);
+        }
+        s.changed(false);
+        im.toast((deg < 0f ? "顺时针" : "逆时针") + "转了 " + Im.fmt(Math.abs(deg)) + "°（" + fl.size() + " 个悬浮键"
+            + (moving > 0 ? "；" + moving + " 个有坐标事件的没转" : "") + "）");
+    }
+
+    /**
+     * 自动关键帧 (2026-11-06): moves a channel by {@code d} at beat {@code t} as a keyframe there. A segment
+     * already ending at {@code t} takes it at its end (and one starting there at its start); one running over {@code t}
+     * is cut there; else a new segment comes from where the one before ends (1 beat back when none) to {@code t}.
+     *
+     * @param base the channel's value outside its events
+     */
+    static void keyNudge(List<Doc.Ev> list, float t, float base, float d) {
+        boolean keyed = false;
+        float last = Float.NaN;
+        Doc.Ev in = null;
+        for (Doc.Ev e : list) {
+            if (Math.abs(e.end - t) < 1e-3f) keyed = true;
+            else if (e.start < t && e.end > t) in = e;
+            else if (e.end < t && !(e.end <= last)) last = e.end;
+        }
+        if (!keyed && in != null) {
+            Doc.Ev rest = in.copy();
+            float v = in.valueAt(t);
+            rest.start = t;
+            rest.from = v;
+            in.end = t;
+            in.to = v;
+            list.add(list.indexOf(in) + 1, rest);
+        } else if (!keyed) {
+            Doc.Ev h = held(list, t);
+            float v = h == null ? base : h.to, s0 = Float.isNaN(last) ? t - 1f : last;
+            int at = 0;
+            while (at < list.size() && list.get(at).start <= s0) at++;
+            list.add(at, new Doc.Ev(s0, t, v, v, 1f));
+        }
+        for (Doc.Ev e : list) {
+            if (Math.abs(e.end - t) < 1e-3f) e.to += d;
+            else if (Math.abs(e.start - t) < 1e-3f) e.from += d;
+        }
+    }
+
+    /** @return the event of a channel that has started by {@code t} last (it runs or holds then), or null */
+    private static Doc.Ev held(List<Doc.Ev> list, float t) {
+        Doc.Ev h = null;
+        for (Doc.Ev e : list) if (e.start <= t && (h == null || e.start >= h.start)) h = e;
+        return h;
     }
 
     // ---- 漩涡 page (Kelvin 2026-10-23)
@@ -1084,6 +1371,78 @@ final class EditorScreen implements CharterApp.View {
     private void dot(float x, float y) {
         g.disc(x, y, 6f, Gfx.GND);
         g.disc(x, y, 3.5f, Color.WHITE);
+    }
+
+    // ================================================================== 线条 (game 7.187)
+
+    /** @return the selected custom line while the 线条 tab is open with the select tool, else null. */
+    private Doc.DStroke strokePage() {
+        return insp.tab == Inspector.STROKE && tool == T_SELECT ? s.doc.strokeByUid(insp.strokeSel) : null;
+    }
+
+    /** @return the screen x, y of point {@code i} of line {@code st}, placed like a floating key's centre. */
+    private float strokeSx(Doc.DStroke st, int i) {
+        return ux(screenX(pv.engine().layout(), st.points[2 * i]));
+    }
+
+    private float strokeSy(Doc.DStroke st, int i) {
+        return uy(Field.y(st.points[2 * i + 1]));
+    }
+
+    /** @return the point of line {@code st} under the pointer (its square), the last drawn first; −1 = none. */
+    private int strokeHandle(Doc.DStroke st) {
+        for (int i = st.pointCount() - 1; i >= 0; i--) {
+            if (Math.abs(im.mx - strokeSx(st, i)) <= 9f && Math.abs(im.my - strokeSy(st, i)) <= 9f) return i;
+        }
+        return -1;
+    }
+
+    /** The selected line's points in order (the game draws the line itself): a numbered square on each. */
+    private void strokeOverlays() {
+        Doc.DStroke st = s.doc.strokeByUid(insp.strokeSel);
+        if (st == null) return;
+        int n = st.pointCount();
+        for (int i = 1; i < n + (st.closed && n > 2 ? 1 : 0); i++) {
+            g.line(strokeSx(st, i - 1), strokeSy(st, i - 1), strokeSx(st, i % n), strokeSy(st, i % n), 1f, Gfx.INK3);
+        }
+        for (int i = 0; i < n; i++) {
+            float sx = strokeSx(st, i), sy = strokeSy(st, i);
+            g.box(sx - 6f, sy - 6f, 12f, 12f, 2f, Gfx.BAR, Gfx.GND);
+            g.text(String.valueOf(i + 1), sx + 10f, sy - 10f, 11, Gfx.INK1);
+        }
+    }
+
+    /**
+     * A press on the 线条 tab with a line selected: on one of its points starts dragging it (Alt deletes it, down to
+     * two), elsewhere but on a key adds a point there after the last; false = not a line's press.
+     */
+    private boolean pressStroke(float rx, float ry, Doc.DNote hot) {
+        Doc.DStroke st = strokePage();
+        if (st == null) return false;
+        int i = strokeHandle(st);
+        if (i < 0 && hot != null) return false;
+        if (i >= 0 && !im.alt) {
+            drag = D_STROKE_PT;
+            dStroke = st;
+            dStrokePt = i;
+            return true;
+        }
+        if (i >= 0 && st.pointCount() <= 2 || i < 0 && st.pointCount() >= Stroke.MAX_POINTS) return true;
+        s.mark();
+        if (i >= 0) st.removePoint(i);
+        else st.addPoint(st.pointCount(), floatX(pv.engine().layout(), rx), floatY(ry));
+        s.changed(false);
+        return true;
+    }
+
+    private void strokePtTo(float rx, float ry) {
+        float x = floatX(pv.engine().layout(), rx), y = floatY(ry);
+        if (dStrokePt >= dStroke.pointCount()
+            || x == dStroke.points[2 * dStrokePt] && y == dStroke.points[2 * dStrokePt + 1]) return;
+        lazyMark();
+        dStroke.points[2 * dStrokePt] = x;
+        dStroke.points[2 * dStrokePt + 1] = y;
+        s.changed(true);
     }
 
     /** Sets the screen frame of veil {@code v} at the playhead for {@link #hx} / {@link #hy}. */
@@ -1166,7 +1525,7 @@ final class EditorScreen implements CharterApp.View {
     private void placeVeil(float rx, float ry) {
         s.mark();
         Doc.DVeil v = new Doc.DVeil();
-        v.x = Math.round(Field.refX(rx));
+        v.x = Math.round(Field.refX(rx) - LaneLayout.TILE_CENTRE);
         v.y = Math.round(Field.refY(ry));
         v.start = snap(beat);
         v.end = v.start + 8f;
@@ -1220,7 +1579,7 @@ final class EditorScreen implements CharterApp.View {
         return Math.abs(rx - cx) * K < 14f * TOUCH && Math.abs(ry - fy) * K < 14f * TOUCH;
     }
 
-    private void ghost(float tb, float dur, int laneId, Line line) {
+    private void ghost(float tb, float dur, float x, Line line) {
         GameEngine e = pv.engine();
         LaneLayout lay = e.layout();
         NoteType type = placeType();
@@ -1230,20 +1589,19 @@ final class EditorScreen implements CharterApp.View {
         float y = up ? ly - pos : ly + pos;
         float x0, w;
         if (!type.inLane()) {
-            x0 = lay.fieldLeft();
-            w = lay.fieldRight() - x0;
+            x0 = lay.windowLeft();                              // a key without x spans the window (laneless)
+            w = lay.windowRight() - x0;
         } else {
-            int i = lay.indexOf(laneId);
-            if (i < 0) return;
-            w = Math.max(pv.headWidth(lay.width(i)), 30f);
-            x0 = lay.centre(i) - w * 0.5f;
+            w = Math.max(pv.headWidth(lay.defaultWidth()), 30f);
+            x0 = screenX(lay, x) - w * 0.5f;
         }
         float h = Math.max(pv.noteHeight(), 28f), tail = dur * spd();
         float lo = up ? y - h - tail : y, hi = up ? y : y + h + tail;
         float gx = ux(x0), gy = uy(hi), gw = w * K, gh = (hi - lo) * K;
         g.dashedRect(gx, gy, gw, gh, Color.WHITE, 0.85f);
         String name = type.displayZh(longTool() && type != NoteType.HOLD);
-        g.text((drag == D_PLACE ? "松开放置" : "点击放置") + name + "（" + lineZh(line) + "）",
+        g.text((drag == D_PLACE ? "松开放置" : "点击放置") + name + "（" + lineZh(line)
+            + (type.inLane() ? " · " + xName(x) : "") + "）",
             gx + gw * 0.5f, gy + gh + 16f, 12, Gfx.INK2, 1);
     }
 
@@ -1255,8 +1613,9 @@ final class EditorScreen implements CharterApp.View {
             placeVeil(rx, ry);
             return;
         }
+        if (pressStroke(rx, ry, hot)) return;
         Doc.DNote one = s.single();
-        if (one != null && one.sustained() && handleHit(one, rx, ry)) {
+        if (one != null && one.sustained() && !one.floating && handleHit(one, rx, ry)) {
             drag = D_LENGTH;
             dNote = one;
             return;
@@ -1273,22 +1632,28 @@ final class EditorScreen implements CharterApp.View {
         }
         if (tool == T_SELECT) {
             if (!adding()) s.sel.clear();
-            int i = lay.indexAtX(rx);
-            if (i >= 0) s.laneSel = lay.idAt(i);
             return;
         }
-        int i = lay.indexAtX(rx);
-        if (i < 0 && !laneless()) return;
+        if (floatPlacing()) {
+            placeFloating(floatX(lay, rx), floatY(ry));
+            return;
+        }
         drag = D_PLACE;
         dLine = s.placeLine;
         dBeat = snap(beatAtRef(dLine, ry));
-        dLane = i >= 0 ? lay.idAt(i) : s.doc.lanes.get(0).id;
+        dX = wholeLine() ? 0f : snapX(refXAt(lay, rx), dBeat);
     }
 
     private void dragPreview(float rx, float ry) {
         switch (drag) {
-            case D_PRESS_NOTE:
-                if (Math.abs(rx - dPressRx) * K > 4f || Math.abs(ry - dPressRy) * K > 4f) startMove();
+            case D_PRESS_NOTE:                                  // a floating key moves in x and y
+                if (Math.abs(rx - dPressRx) * K > 4f || Math.abs(ry - dPressRy) * K > 4f) {
+                    if (dNote.floating) startFloatMove();
+                    else startMove();
+                }
+                break;
+            case D_FLOAT_MOVE:
+                floatTo(rx, ry);
                 break;
             case D_MOVE:
                 moveTo(rx, ry);
@@ -1301,6 +1666,9 @@ final class EditorScreen implements CharterApp.View {
                 break;
             case D_VEIL_PT:
                 handleTo(rx, ry);
+                break;
+            case D_STROKE_PT:
+                strokePtTo(rx, ry);
                 break;
             default:
         }
@@ -1316,38 +1684,31 @@ final class EditorScreen implements CharterApp.View {
     private void startMove() {
         drag = D_MOVE;
         dApplied = 0f;
-        dLaneApplied = 0;
+        dXApplied = 0f;
         dSel.clear();
         dSel.addAll(s.selected());
-        dLanes.clear();
-        for (Doc.DNote n : dSel) dLanes.put(n.uid, s.doc.laneIndex(n.lane));
-        dLane = pv.engine().layout().indexAtX(dPressRx);
     }
 
     private void moveTo(float rx, float ry) {
         float db = snapDelta((dist(dNote.line, ry) - dist(dNote.line, dPressRy)) / spd());
-        int li = pv.engine().layout().indexAtX(rx);
-        int dl = li >= 0 && dLane >= 0 ? li - dLane : dLaneApplied;
-        int count = s.doc.lanes.size();
-        for (Doc.DNote n : dSel) {
-            Integer o = dLanes.get(n.uid);
-            if (!n.inLane() || o == null || o < 0) continue;
-            dl = Math.max(dl, -o);
-            dl = Math.min(dl, count - 1 - o);
-        }
-        applyMove(db, dl);
+        LaneLayout lay = pv.engine().layout();
+        float raw = refXAt(lay, rx) - refXAt(lay, dPressRx);
+        // 定轨 (game 7.184): the dragged key lands on a lane or half lane at its new beat, the others move with it
+        float x0 = dNote.x - dXApplied, b1 = dNote.judgement - dApplied + db;
+        boolean lanes = dNote.inLane() && xStep > 0f && s.doc.lanesAt(b1) > 0;
+        applyMove(db, lanes ? snapX(x0 + raw, b1) - x0 : snapX(raw));
     }
 
-    private void applyMove(float db, int dl) {
-        if (db == dApplied && dl == dLaneApplied) return;
+    /** Moves the dragged notes {@code db} beats and {@code dx} sideways (their x events too) from where they were. */
+    private void applyMove(float db, float dx) {
+        if (db == dApplied && dx == dXApplied) return;
         lazyMark();
         for (Doc.DNote n : dSel) {
             n.retime(db - dApplied);
-            Integer o = dLanes.get(n.uid);
-            if (n.inLane() && o != null && o >= 0) n.lane = s.doc.lanes.get(o + dl).id;
+            if (n.inLane()) n.moveX(dx - dXApplied);
         }
         dApplied = db;
-        dLaneApplied = dl;
+        dXApplied = dx;
         s.changed(true);
     }
 
@@ -1391,6 +1752,8 @@ final class EditorScreen implements CharterApp.View {
             case D_TL_MOVE:
             case D_VEIL:
             case D_VEIL_PT:
+            case D_FLOAT_MOVE:
+            case D_STROKE_PT:
                 if (dMarked) s.changed(false);
                 break;
             default:
@@ -1404,7 +1767,7 @@ final class EditorScreen implements CharterApp.View {
         float dur = longTool() ? t1 - dBeat : 0f;
         if (dur < st * 0.5f) dur = longTool() ? 1f : 0f;
         NoteType type = placeType();
-        Doc.DNote n = new Doc.DNote(type, dLine, dLane, dBeat);
+        Doc.DNote n = new Doc.DNote(type, dLine, dX, dBeat);
         n.approach(Note.DEFAULT_APPROACH_BEATS, Doc.SPAWN, 1f);
         if (dur > 0f) {
             n.duration = dur;
@@ -1434,11 +1797,14 @@ final class EditorScreen implements CharterApp.View {
     }
 
     private float markerY(Doc.DNote n) {
+        if (n.floating) {                                       // in the 悬浮 row by its height, high on top
+            return R_FLT + 4f + (1f - MathUtils.clamp(n.y / Field.REF_H, 0f, 1f)) * (R_FLT_H - 8f);
+        }
         float top = rowTop(n.line), h = rowH(n.line);
         if (!n.inLane()) return top + h * 0.5f;
-        int li = Math.max(0, s.doc.laneIndex(n.lane));
-        int lc = Math.max(1, s.doc.lanes.size());
-        return top + 4f + (li + 0.5f) / lc * (h - 8f);
+        // the row spans x −960 (top) … +960 (bottom), like the old lanes left to right
+        float f = MathUtils.clamp((n.x + 960f) / 1920f, 0f, 1f);
+        return top + 4f + f * (h - 8f);
     }
 
     private Doc.DNote markerAt(float mx, float my) {
@@ -1461,18 +1827,20 @@ final class EditorScreen implements CharterApp.View {
     }
 
     private void timeline() {
-        g.rect(64f, TL_TOP, TR - 64f, TL_BOTTOM - TL_TOP, Gfx.BAR2);
-        g.line(64f, TL_TOP, TR, TL_TOP, 1f, Gfx.LINE);
-        g.text("音频", 76f, R_AUDIO + 15f, 13, Gfx.INK3);
-        g.text("上线", 76f, R_UP + R_UP_H * 0.5f, 13, Gfx.INK1);
-        g.text("下线", 76f, R_LOW + R_LOW_H * 0.5f, 13, Gfx.GND);
-        g.text("场地", 76f, R_FIELD + R_FIELD_H * 0.5f, 13, Gfx.INK3);
+        g.rect(0f, TL_TOP, TR, TL_BOTTOM - TL_TOP, Gfx.BAR2);
+        g.line(0f, TL_TOP, TR, TL_TOP, 1f, Gfx.LINE);
+        g.text("音频", 14f, R_AUDIO + 15f, 13, Gfx.INK3);
+        g.text("上线", 14f, R_UP + R_UP_H * 0.5f, 13, Gfx.INK1);
+        g.text("悬浮", 14f, R_FLT + R_FLT_H * 0.5f, 13, Gfx.INK2);
+        g.text("下线", 14f, R_LOW + R_LOW_H * 0.5f, 13, Gfx.GND);
+        g.text("场地", 14f, R_FIELD + R_FIELD_H * 0.5f, 13, Gfx.INK3);
         if (TAB) zoomButtons();
         g.rect(TX, R_UP, TW, R_UP_H, Gfx.ITEM, 0.45f);
+        g.rect(TX, R_FLT, TW, R_FLT_H, Gfx.ITEM, 0.25f);
         g.rect(TX, R_LOW, TW, R_LOW_H, Gfx.ITEM, 0.45f);
         im.pushClip(TX, TL_TOP, TW, TL_BOTTOM - TL_TOP);
 
-        // beat grid
+        // beat grid: thin divisions, whole beats bold, bar lines (every BAR_BEATS) boldest (Kelvin 2026-11-06)
         double ppb = TW / tlSpan;
         int b0 = (int) Math.floor(tlStart), b1 = (int) Math.ceil(tlStart + tlSpan);
         float st = step();
@@ -1486,8 +1854,9 @@ final class EditorScreen implements CharterApp.View {
         while (ppb * labelEvery < 44.0) labelEvery *= 2;
         for (int b = b0; b <= b1; b++) {
             float x = bx(b);
-            boolean bar = Math.floorMod(b, 4) == 0;
-            g.line(x, R_UP, x, R_RULER, 1f, Gfx.LINE, bar ? 0.9f : 0.45f);
+            boolean bar = Math.floorMod(b, BAR_BEATS) == 0;
+            if (bar) g.line(x, R_UP, x, R_RULER, ppb * BAR_BEATS >= 24.0 ? 3f : 1f, Gfx.INK3, 0.75f);
+            else if (ppb >= 6.0) g.line(x, R_UP, x, R_RULER, 2f, Gfx.SEL_LINE, 0.95f);
             if (Math.floorMod(b, labelEvery) == 0) {
                 g.line(x, R_RULER, x, R_RULER + 5f, 1f, Gfx.INK3);
                 g.text(Integer.toString(b), x + 3f, R_RULER + 11f, 11, Gfx.INK3);
@@ -1532,7 +1901,8 @@ final class EditorScreen implements CharterApp.View {
             boolean dup = s.note(n) == null && s.buildError == null;
             boolean up = n.line == Line.UPPER;
             boolean mine = n.type == NoteType.MINE || n.type == NoteType.TIDE_MINE;
-            Color c = dup ? Gfx.BAD : mine ? Gfx.MINE : n.type == NoteType.UNIVERSAL ? Gfx.WAVE : up ? UP_INK : Gfx.GND;
+            Color c = dup ? Gfx.BAD : mine ? Gfx.MINE : n.type == NoteType.UNIVERSAL ? Gfx.WAVE
+                : n.type == NoteType.DRAG ? Theme.DRAG : up ? UP_INK : Gfx.GND;
             if (!n.inLane()) {
                 float top = rowTop(n.line) + 2f, h = rowH(n.line) - 4f;
                 if (n.duration > 0f) g.rect(x, top, xe - x, h, c, 0.25f);
@@ -1543,6 +1913,10 @@ final class EditorScreen implements CharterApp.View {
             float y = markerY(n);
             if (n.sustained()) g.rect(x, y - 1.5f, xe - x, 3f, c, 0.85f);
             if (n.type == NoteType.MINE) g.stroke(x - 3f, y - 3f, 6f, 6f, 1f, 1.3f, c);
+            else if (n.type == NoteType.DRAG) {
+                g.tri(x - 4f, y, x, y - 4f, x + 4f, y, c, 1f);
+                g.tri(x - 4f, y, x, y + 4f, x + 4f, y, c, 1f);
+            } else if (n.floating) g.circle(x, y, 3.5f, 1.5f, c);
             else g.rect(x - 2.5f, y - 2.5f, 5f, 5f, c);
             if (sel) g.stroke(x - 5f, y - 5f, xe - x + 10f, 10f, 2f, 1.5f, Color.WHITE);
         }
@@ -1550,15 +1924,8 @@ final class EditorScreen implements CharterApp.View {
         // field events
         bars.clear();
         Doc d = s.doc;
-        for (Doc.DLane l : d.lanes) {
-            if (s.laneSel != Session.NO_LANE && l.id != s.laneSel) continue;
-            for (Doc.Ev ev : l.widthEv) fieldBar(ev, "宽 " + laneName(l.id), l.id);
-            for (Doc.Ev ev : l.opacityEv) fieldBar(ev, "透 " + laneName(l.id), l.id);
-            if (l.insert != null) fieldBar(l.insert, "插入 " + laneName(l.id), l.id);
-            if (l.delete != null) fieldBar(l.delete, "删除 " + laneName(l.id), l.id);
-        }
-        String[] ln = {"上线", "下线", "镜头", "缩放"};
-        ArrayList<java.util.List<Doc.Ev>> lists = Checks.lineLists(d);
+        String[] ln = {"上线", "下线", "镜头", "缩放", "上线叠加", "下线叠加", "镜头叠加"};
+        ArrayList<java.util.List<Doc.Ev>> lists = Checks.fieldLists(d);
         for (int i = 0; i < lists.size(); i++) for (Doc.Ev ev : lists.get(i)) fieldBar(ev, ln[i], LINE_BAR - i);
 
         // tempo markers
@@ -1635,7 +2002,6 @@ final class EditorScreen implements CharterApp.View {
                 for (float[] b : bars) {
                     if (im.mx >= b[0] - 2f && im.mx <= b[1] + 2f) {
                         int id = (int) b[2];
-                        if (id > LINE_BAR) s.laneSel = id;
                         insp.tab = Inspector.FIELD;
                         insp.openLine(id);
                         drag = D_NONE;
@@ -1671,12 +2037,11 @@ final class EditorScreen implements CharterApp.View {
         } else if (drag == D_TL_PRESS && Math.abs(im.mx - im.pressX) > 4f) {
             drag = D_TL_MOVE;
             dApplied = 0f;
-            dLaneApplied = 0;
+            dXApplied = 0f;
             dSel.clear();
             dSel.addAll(s.selected());
-            dLanes.clear();
         } else if (drag == D_TL_MOVE) {
-            applyMove(snapDelta((float) (beatAtX(im.mx) - beatAtX(im.pressX))), 0);
+            applyMove(snapDelta((float) (beatAtX(im.mx) - beatAtX(im.pressX))), 0f);
         }
     }
 
@@ -1783,30 +2148,242 @@ final class EditorScreen implements CharterApp.View {
         g.text("Ctrl+S", 1892f, 28f, 11, Gfx.INK3, 2);
     }
 
-    private void rail() {
-        g.rect(0f, 56f, 64f, Gfx.H - 56f, Gfx.BAR);
-        g.line(64f, 56f, 64f, Gfx.H, 1f, Gfx.LINE);
-        for (int t = 0; t < TOOL_NAMES.length; t++) {
-            float y = TOOL_Y[t];
-            boolean on = tool == t;
-            boolean hv = im.hover(6f, y, 52f, TOOL_H);
-            if (on) g.box(6f, y, 52f, TOOL_H, 8f, Gfx.SEL, Gfx.GND);
-            else if (hv) g.rrect(6f, y, 52f, TOOL_H, 8f, Gfx.BTN);
-            icon(t, 32f, y + 16f);
-            String n = TOOL_NAMES[t];
-            g.text(n, 32f, y + 35f, n.length() > 4 ? 8 : n.length() > 3 ? 10 : 11,
-                on ? Gfx.INK1 : Gfx.INK2, 1);
-            if (!TAB) g.text(TOOL_KEYS[t], 52f, y + 8f, 9, Gfx.INK3, 1);
+    /**
+     * The tool row (2026-11-06): the tools in {@link #TOOL_ORDER} with a gap between groups, then 放上线 / 放下线 (Tab)
+     * and 自动关键帧 (K).
+     */
+    private void toolRow() {
+        int n = TOOL_ORDER.length + 2;
+        float gap = 3f, sep = 8f, w = (Math.round(PX + PW) - TOOL_X - 6f * sep - (n - 1) * gap) / n;
+        float x = TOOL_X, y = TOOL_Y;
+        for (int i = 0; i < n; i++) {
+            if (i == 1 || i == 4 || i == 5 || i == 7 || i == 11 || i == n - 2) {
+                g.line(x + 2.5f, y + 8f, x + 2.5f, y + TOOL_H - 8f, 1f, Gfx.LINE);
+                x += sep;
+            }
+            if (i == n - 2) break;
+            int t = TOOL_ORDER[i];
+            boolean on = t == T_FLOAT ? floatMode : tool == t, hv = im.hover(x, y, w, TOOL_H);
+            if (on) g.box(x, y, w, TOOL_H, 8f, Gfx.SEL, Gfx.GND);
+            else if (hv) g.rrect(x, y, w, TOOL_H, 8f, Gfx.BTN);
+            icon(t, x + w * 0.5f, y + 13f);
+            String nm = TOOL_NAMES[t];
+            g.text(nm, x + w * 0.5f, y + TOOL_H - 9f, nm.length() > 3 ? 9 : 11, on ? Gfx.INK1 : Gfx.INK2, 1);
+            if (!TAB) g.text(TOOL_KEYS[t], x + w - 8f, y + 8f, 9, Gfx.INK3, 1);
             if (hv) im.cursor(Cursor.SystemCursor.Hand);
-            if (im.click(new Im.Pair("tool", t), 6f, y, 52f, TOOL_H)) setTool(t);
+            if (im.click(new Im.Pair("tool", t), x, y, w, TOOL_H)) {
+                if (t == T_FLOAT) floatMode = !floatMode;                 // 悬浮 is a switch for the key tools
+                else setTool(t);
+            }
+            x += w + gap;
         }
-        g.line(14f, 116f, 50f, 116f, 1f, Gfx.LINE);
-        g.line(14f, 513f, 50f, 513f, 1f, Gfx.LINE);
-        g.line(14f, 621f, 50f, 621f, 1f, Gfx.LINE);
         boolean up = s.placeLine == Line.UPPER;
-        if (im.click("rail-line", 6f, 628f, 52f, 36f)) s.placeLine = up ? Line.LOWER : Line.UPPER;
-        g.text(up ? "放上线" : "放下线", 32f, 638f, 11, up ? Gfx.INK1 : Gfx.GND, 1);
-        g.text(TAB ? "点这里换" : "Tab", 32f, 654f, 10, Gfx.INK3, 1);
+        if (im.click("rail-line", x, y, w, TOOL_H)) s.placeLine = up ? Line.LOWER : Line.UPPER;
+        if (im.hover(x, y, w, TOOL_H)) im.cursor(Cursor.SystemCursor.Hand);
+        g.text(up ? "放上线" : "放下线", x + w * 0.5f, y + 13f, 11, up ? Gfx.INK1 : Gfx.GND, 1);
+        g.text(TAB ? "点这里换" : "Tab", x + w * 0.5f, y + TOOL_H - 9f, 9, Gfx.INK3, 1);
+        x += w + gap;
+        if (autoKey) g.box(x, y, w, TOOL_H, 8f, Gfx.SEL, Gfx.TIDE);
+        else if (im.hover(x, y, w, TOOL_H)) g.rrect(x, y, w, TOOL_H, 8f, Gfx.BTN);
+        if (im.hover(x, y, w, TOOL_H)) im.cursor(Cursor.SystemCursor.Hand);
+        if (im.click("auto-key", x, y, w, TOOL_H)) autoKey = !autoKey;
+        float kc = x + w * 0.5f;
+        g.tri(kc - 6f, y + 13f, kc, y + 7f, kc + 6f, y + 13f, autoKey ? Gfx.TIDE : Gfx.INK3, 1f);
+        g.tri(kc - 6f, y + 13f, kc, y + 19f, kc + 6f, y + 13f, autoKey ? Gfx.TIDE : Gfx.INK3, 1f);
+        g.text("自动关键帧", kc, y + TOOL_H - 9f, w < 60f ? 8 : 10, autoKey ? Gfx.INK1 : Gfx.INK2, 1);
+        if (!TAB) g.text("K", x + w - 8f, y + 8f, 9, Gfx.INK3, 1);
+    }
+
+    // ================================================================== 图层
+
+    /** One row of 图层: a line, the floating keys or the 漩涡 / 水帘 counts. */
+    private static final class LRow {
+        int kind, keys;
+        Line line;
+        /** Where its 键 count starts (screen x), and its top (screen y) this frame. */
+        float kx, y;
+    }
+
+    private static final int L_LINE = 0, L_FLOAT = 1, L_VEILS = 2;
+    private final ArrayList<LRow> lRows = new ArrayList<>();
+    /** Rows this frame; the row pressed (−1 none), on its 键 count or not; held, dragged or scrolled by a finger. */
+    private int lUsed, lPress = -1;
+    private boolean lPressKeys, lDragging, lScrolling;
+    private float lHold, lScroll, lScroll0;
+
+    private void lRow(int kind, Line l, int keys) {
+        if (lUsed == lRows.size()) lRows.add(new LRow());
+        LRow r = lRows.get(lUsed++);
+        r.kind = kind;
+        r.line = l;
+        r.keys = keys;
+    }
+
+    /** Lists the rows: the two lines, the floating keys (悬浮键, game 7.185) and the 漩涡 / 水帘 counts. */
+    private void buildLayers() {
+        lUsed = 0;
+        int up = 0, low = 0, fl = 0;
+        for (Doc.DNote n : s.doc.notes) {
+            if (n.floating) fl++;
+            else if (n.line == Line.UPPER) up++;
+            else low++;
+        }
+        lRow(L_LINE, Line.UPPER, up);
+        lRow(L_LINE, Line.LOWER, low);
+        lRow(L_FLOAT, null, fl);
+        lRow(L_VEILS, null, 0);
+    }
+
+    /**
+     * 图层 (2026-11-06): the lines, the floating keys and the 漩涡 / 水帘. A name selects the line (场地 tab), the
+     * floating keys or 漩涡 / 水帘; a 键 count selects those keys. Dragging a 键 count onto another row moves the keys
+     * there: onto a line, or 悬浮 (on a tablet a long press lifts it first; a plain drag scrolls).
+     */
+    private void layers(float dt) {
+        float rh = TAB ? 30f : 26f, top = LY + 30f, view = LH - 52f;
+        g.box(LX, LY, LW, LH, 8f, Gfx.BAR, Gfx.LINE);
+        g.text("图层", LX + 12f, LY + 16f, 14, Gfx.INK1);
+        buildLayers();
+        float most = Math.max(0f, lUsed * rh - view);
+        if (im.hover(LX, top, LW, view) && im.wheel != 0f) lScroll += im.wheel * rh;
+        lScroll = MathUtils.clamp(lScroll, 0f, most);
+        int hot = -1;
+        boolean hotKeys = false;
+        im.pushClip(LX, top, LW, view);
+        for (int i = 0; i < lUsed; i++) {
+            LRow r = lRows.get(i);
+            r.y = top + i * rh - lScroll;
+            r.kx = LX + LW - 8f;
+            if (r.y + rh < top || r.y > top + view) continue;
+            float ix = LX + 10f, cy = r.y + rh * 0.5f;
+            boolean over = im.hover(LX, r.y, LW, rh), target = lDragging && over && lPress != i;
+            if (target) g.rrect(LX + 4f, r.y + 2f, LW - 8f, rh - 4f, 5f, Gfx.BTN);
+            if (r.kind != L_VEILS) {
+                String k = "键 " + r.keys;
+                float kw = g.width(k, 11) + 12f;
+                r.kx -= kw;
+                g.box(r.kx, r.y + 5f, kw, rh - 10f, 4f, Gfx.BTN, Gfx.BTN_LINE);
+                g.text(k, r.kx + kw * 0.5f, cy, 11, r.keys > 0 ? Gfx.INK2 : Gfx.INK3, 1);
+            }
+            String name;
+            Color c;
+            if (r.kind == L_LINE) {
+                name = r.line == Line.UPPER ? "天线" : "地线";
+                c = r.line == Line.UPPER ? UP_INK : Gfx.GND;
+            } else if (r.kind == L_FLOAT) {
+                name = "悬浮键";
+                c = Gfx.INK1;
+            } else {
+                name = "漩涡 " + s.doc.veils.size() + " · 水帘 " + s.doc.curtains.size();
+                c = Gfx.INK2;
+            }
+            g.text(g.fit(name, 12, r.kx - ix - 6f), ix, cy, 12, c);
+            if (over) {
+                hot = i;
+                hotKeys = r.kind != L_VEILS && im.mx >= r.kx;
+                im.cursor(Cursor.SystemCursor.Hand);
+            }
+        }
+        im.popClip();
+        g.text(TAB ? "长按拖「键」：换线 / 悬浮" : "拖「键」：换线 / 悬浮", LX + 12f, LY + LH - 12f, 10, Gfx.INK3);
+        layerInput(dt, hot, hotKeys);
+    }
+
+    private void layerInput(float dt, int hot, boolean hotKeys) {
+        if (im.pressed && hot >= 0 && drag == D_NONE && !im.popupOpen() && !im.modalOpen()) {
+            lPress = hot;
+            lPressKeys = hotKeys;
+            lHold = 0f;
+            lDragging = false;
+            lScrolling = false;
+            lScroll0 = lScroll;
+        }
+        if (lPress < 0 || lPress >= lUsed) {
+            lPress = -1;
+            return;
+        }
+        LRow p = lRows.get(lPress);
+        if (im.down) {
+            lHold += dt;
+            float d = Math.abs(im.mx - im.pressX) + Math.abs(im.my - im.pressY);
+            if (!lDragging && !lScrolling) {
+                boolean lift = TAB ? lHold >= 0.4f && d < 12f : d > 6f;
+                if (lift) lDragging = lPressKeys && p.keys > 0;
+                if (TAB && !lDragging && d >= 12f) lScrolling = true;
+            }
+            if (lScrolling) lScroll = lScroll0 - (im.my - im.pressY);
+            if (lDragging) {
+                String t = "键 " + p.keys;
+                float w = g.width(t, 12) + 16f;
+                g.box(im.mx + 10f, im.my - 12f, w, 24f, 6f, Gfx.SEL, Gfx.GND);
+                g.text(t, im.mx + 18f, im.my, 12, Gfx.INK1);
+            }
+            return;
+        }
+        int at = lPress;
+        lPress = -1;
+        if (lScrolling) return;
+        if (lDragging) {
+            lDragging = false;
+            if (hot >= 0 && hot != at) layerDrop(p, lPressKeys, lRows.get(hot));
+        } else if (im.released && hot == at && hotKeys == lPressKeys) layerPick(p, hotKeys);
+    }
+
+    private boolean onRow(Doc.DNote n, LRow r) {
+        return r.kind == L_FLOAT ? n.floating : !n.floating && n.line == r.line;
+    }
+
+    /** A click on row {@code r}: its keys ({@code keys}, or the floating keys' name), else the line or 漩涡 / 水帘. */
+    private void layerPick(LRow r, boolean keys) {
+        if (keys || r.kind == L_FLOAT) {
+            s.sel.clear();
+            for (Doc.DNote n : s.doc.notes) if (onRow(n, r)) s.sel.add(n.uid);
+            insp.tab = Inspector.NOTE;
+        } else if (r.kind == L_LINE) {
+            insp.tab = Inspector.FIELD;
+            insp.openLine(LINE_BAR - (r.line == Line.UPPER ? 0 : 1));
+        } else insp.tab = s.doc.veils.isEmpty() && !s.doc.curtains.isEmpty() ? Inspector.CURTAIN : Inspector.VEIL;
+    }
+
+    /** Row {@code from}'s keys dropped on row {@code to}: they go onto that line, or float (悬浮). */
+    private void layerDrop(LRow from, boolean keys, LRow to) {
+        if (!keys || to.kind == L_VEILS || to.kind == from.kind && to.line == from.line) return;
+        String where = to.kind == L_FLOAT ? "悬浮" : to.line == Line.UPPER ? "天线" : "地线";
+        ArrayList<Doc.DNote> go = new ArrayList<>();
+        int kept = 0;
+        for (Doc.DNote n : s.doc.notes) {
+            if (!onRow(n, from)) continue;
+            if (to.kind == L_FLOAT && !n.canFloat()) kept++;
+            else go.add(n);
+        }
+        if (!go.isEmpty()) {
+            s.mark();
+            for (Doc.DNote n : go) {
+                if (to.kind == L_FLOAT) n.toFloating(Floating.DEFAULT_Y);
+                else {
+                    if (n.floating) n.toLine();
+                    n.line = to.line;
+                }
+            }
+            s.changed(false);
+        }
+        im.toast(go.size() + " 个键挪到了" + where + (kept > 0 ? "；" + kept + " 个浪花不能悬浮，没动" : ""));
+    }
+
+    /**
+     * For the self-test: where row {@code line} (null: the floating keys' row) of 图层 is this frame, at its name or
+     * at its 键 count.
+     *
+     * @return x, y on screen, or null when it is not listed
+     */
+    float[] layerSpot(Line line, boolean keys) {
+        for (int i = 0; i < lUsed; i++) {
+            LRow r = lRows.get(i);
+            if (line != null ? r.kind == L_LINE && r.line == line : r.kind == L_FLOAT) {
+                return new float[]{keys ? r.kx + 10f : LX + 40f, r.y + (TAB ? 15f : 13f)};
+            }
+        }
+        return null;
     }
 
     /**
@@ -1815,25 +2392,30 @@ final class EditorScreen implements CharterApp.View {
      */
     private void touchBar() {
         float x = PX, y = AB_Y, h = AB_H;
-        if (im.button("t-undo", x, y, 60f, h, "撤销", Im.NORMAL, 14)) undo();
-        if (im.button("t-redo", x + 66f, y, 60f, h, "重做", Im.NORMAL, 14)) redo();
-        x += 138f;
-        if (im.button("t-copy", x, y, 56f, h, "复制", Im.NORMAL, 14)) copy(false);
-        if (im.button("t-paste", x + 62f, y, 56f, h, "粘贴", Im.NORMAL, 14)) paste();
-        if (im.button("t-del", x + 124f, y, 56f, h, "删除", Im.DANGER, 14)) {
+        if (im.button("t-undo", x, y, 54f, h, "撤销", Im.NORMAL, 14)) undo();
+        if (im.button("t-redo", x + 60f, y, 54f, h, "重做", Im.NORMAL, 14)) redo();
+        x += 126f;
+        if (im.button("t-copy", x, y, 52f, h, "复制", Im.NORMAL, 14)) copy(false);
+        if (im.button("t-paste", x + 58f, y, 52f, h, "粘贴", Im.NORMAL, 14)) paste();
+        if (im.button("t-del", x + 116f, y, 52f, h, "删除", Im.DANGER, 14)) {
             if (veilTab() && s.veilSel != 0) deleteVeil();
             else deleteSel();
         }
-        if (im.button("t-all", x + 186f, y, 56f, h, "全选", Im.NORMAL, 14)) {
+        if (im.button("t-all", x + 174f, y, 52f, h, "全选", Im.NORMAL, 14)) {
             s.sel.clear();
             for (Doc.DNote n : s.doc.notes) s.sel.add(n.uid);
         }
-        if (im.button("t-multi", x + 248f, y, 56f, h, "多选", multi ? Im.ON : Im.NORMAL, 14)) multi = !multi;
-        x += 316f;
-        if (im.button("t-prev", x, y, 40f, h, "◀", Im.NORMAL, 14)) stepTime(-1);
-        if (im.button("t-next", x + 46f, y, 40f, h, "▶", Im.NORMAL, 14)) stepTime(1);
-        String n = (s.sel.isEmpty() ? "" : "已选 " + s.sel.size() + " · ") + "共 " + s.doc.notes.size();
-        g.text(n, SB_X - 10f, y + h * 0.5f, 12, Gfx.INK3, 2);
+        if (im.button("t-multi", x + 232f, y, 52f, h, "多选", multi ? Im.ON : Im.NORMAL, 14)) multi = !multi;
+        x += 294f;
+        if (im.button("t-prev", x, y, 38f, h, "◀", Im.NORMAL, 14)) stepTime(-1);
+        if (im.button("t-next", x + 44f, y, 38f, h, "▶", Im.NORMAL, 14)) stepTime(1);
+        // the count, in two lines while something is selected (the bar is only as wide as the preview)
+        String all = "共 " + s.doc.notes.size();
+        if (s.sel.isEmpty()) g.text(all, SB_X - 10f, y + h * 0.5f, 12, Gfx.INK3, 2);
+        else {
+            g.text("已选 " + s.sel.size(), SB_X - 10f, y + h * 0.5f - 8f, 12, Gfx.INK2, 2);
+            g.text(all, SB_X - 10f, y + h * 0.5f + 8f, 12, Gfx.INK3, 2);
+        }
         if (im.button("stats", SB_X, SB_Y, SB_W, SB_H, "统计", statsOpen ? Im.ON : Im.NORMAL, 13)) statsOpen = !statsOpen;
     }
 
@@ -1888,9 +2470,18 @@ final class EditorScreen implements CharterApp.View {
                 }
                 break;
             }
+            case T_DRAG:                                            // the game's thin light-purple bar and diamond
+                g.rect(cx - 13f, cy - 2.5f, 26f, 5f, Theme.DRAG);
+                g.tri(cx - 7f, cy, cx, cy - 8f, cx + 7f, cy, Theme.DRAG_LIGHT, 1f);
+                g.tri(cx - 7f, cy, cx, cy + 8f, cx + 7f, cy, Theme.DRAG_DEEP, 1f);
+                break;
             case T_VEIL:
                 g.disc(cx, cy, 10f, Gfx.TIDE, 0.18f);
                 g.circle(cx, cy, 10f, 1.6f, Gfx.TIDE);
+                break;
+            case T_FLOAT:                                           // an empty ring filling up from its middle
+                g.circle(cx, cy, 9f, 1.6f, Color.WHITE);
+                g.disc(cx, cy, 5f, Gfx.TIDE);
                 break;
             default:
                 for (int i = 3; i >= 1; i--) g.disc(cx, cy, 4f + i * 3f, Gfx.FX, 0.16f);
@@ -1900,9 +2491,9 @@ final class EditorScreen implements CharterApp.View {
     }
 
     private void statusBar() {
-        g.rect(65f, TL_BOTTOM, TR - 65f, Gfx.H - TL_BOTTOM, Gfx.BAR);
-        g.line(64f, TL_BOTTOM, TR, TL_BOTTOM, 1f, Gfx.LINE2);
-        float x = 80f;
+        g.rect(0f, TL_BOTTOM, TR, Gfx.H - TL_BOTTOM, Gfx.BAR);
+        g.line(0f, TL_BOTTOM, TR, TL_BOTTOM, 1f, Gfx.LINE2);
+        float x = 16f;
         x = keycap(x, "空格", "播放");
         x = keycap(x, "点击", "放置");
         x = keycap(x, "拖", "长按/移动");
@@ -1911,13 +2502,7 @@ final class EditorScreen implements CharterApp.View {
         x = keycap(x, "Ctrl+C/X/V/Z", "");
         x = keycap(x, "Del", "删除");
         keycap(x, "Tab", "上/下线");
-        String right;
-        Doc.DLane l = s.doc.lane(s.laneSel);
-        if (insp.tab == Inspector.FIELD && l != null) {
-            right = "轨道 " + laneName(l.id) + " · 宽度事件 " + l.widthEv.size() + " 段";
-        } else {
-            right = "共 " + s.doc.notes.size() + " 个音符" + (s.sel.isEmpty() ? "" : " · 已选 " + s.sel.size());
-        }
+        String right = "共 " + s.doc.notes.size() + " 个音符" + (s.sel.isEmpty() ? "" : " · 已选 " + s.sel.size());
         g.text(right, TR - 74f, TL_BOTTOM + 14f, 12, Gfx.INK3, 2);
         if (im.button("stats", SB_X, SB_Y, SB_W, SB_H, "统计", statsOpen ? Im.ON : Im.NORMAL, 12)) {
             statsOpen = !statsOpen;

@@ -9,6 +9,7 @@ import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.ScreenUtils;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.ChartMapper;
+import org.kelvinizer.elements.Floating;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
@@ -41,8 +42,16 @@ final class AutoTest {
     }
 
     private EditorScreen ed() {
-        return app.view() instanceof EditorScreen ? (EditorScreen) app.view() : null;
+        EditorScreen e = app.view() instanceof EditorScreen ? (EditorScreen) app.view() : null;
+        if (e != null && e != snapSet) {        // the steps were written for 坐标吸附 120 (the default before 11-06)
+            e.xStep = 120f;
+            snapSet = e;
+        }
+        return e;
     }
+
+    /** The editor whose 坐标吸附 {@link #ed()} has set to 120. */
+    private EditorScreen snapSet;
 
     private void click(int x, int y) {
         app.im.touchDown(x, y, 0, Input.Buttons.LEFT);
@@ -122,13 +131,6 @@ final class AutoTest {
             case 95: if (e != null) log("stats after Esc: open " + e.statsOpen + " (expect false), selection kept "
                 + e.s.sel.size());
                 break;
-            case 96:
-                if (e != null) tidySetup(e);
-                break;
-            case 98: app.im.keyDown(Input.Keys.ENTER); break;    // 删掉 2 条
-            case 99:
-                if (e != null) tidyCheck(e);
-                break;
             case 101:
                 if (e != null) selectNear(e);
                 break;
@@ -156,34 +158,6 @@ final class AutoTest {
                 }
                 break;
             case 112: click((int) (EditorScreen.TR + (Gfx.W - EditorScreen.TR) * 5f / 6f), 79); break; // 场地
-            case 114:
-                if (e != null && !e.s.doc.lanes.isEmpty()) e.s.laneSel = e.s.doc.lanes.get(2).id;
-                break;
-            case 116:
-                if (e != null) {
-                    notesBefore = e.s.doc.notes.size();
-                    e.insp.setLaneCount(e.s, e.s.doc, 8);           // lanes ±5 have notes: asks first
-                }
-                break;
-            case 119:
-                app.im.keyDown(Input.Keys.ENTER);                    // default button = 取消
-                break;
-            case 121:
-                if (e != null) {
-                    log("after cancel: laneCount " + e.s.doc.laneCount + ", notes "
-                        + (e.s.doc.notes.size() - notesBefore));
-                    e.insp.setLaneCount(e.s, e.s.doc, e.s.doc.lanes.size());
-                    log("finite: laneCount " + e.s.doc.laneCount + ", lanes " + e.s.doc.lanes.size());
-                }
-                break;
-            case 124:
-                if (e != null) {
-                    e.undo();
-                    log("undo: laneCount " + e.s.doc.laneCount);
-                    e.redo();
-                    log("redo: laneCount " + e.s.doc.laneCount);
-                }
-                break;
             case 122: click((int) EditorScreen.TR + 62, 79); break; // 谱面
             case 125:
                 if (e != null) {
@@ -197,27 +171,18 @@ final class AutoTest {
                     e.insp.tab = Inspector.CHART;
                     log("before audio drag: beat " + e.beat);
                 }
-                app.im.touchDown(900, 898, 0, Input.Buttons.LEFT);   // audio row
+                app.im.touchDown(900, AUDIO_Y, 0, Input.Buttons.LEFT); // audio row
                 break;
-            case 127: app.im.touchDragged(900 - AUDIO_DRAG, 898, 0); break;
-            case 128: app.im.touchUp(900 - AUDIO_DRAG, 898, 0, Input.Buttons.LEFT); break;
+            case 127: app.im.touchDragged(900 - AUDIO_DRAG, AUDIO_Y, 0); break;
+            case 128: app.im.touchUp(900 - AUDIO_DRAG, AUDIO_Y, 0, Input.Buttons.LEFT); break;
             case 129:
                 if (e != null) log("after dragging the audio row " + AUDIO_DRAG + " px left: beat " + e.beat);
                 break;
             case 133:
-                if (e != null) {
-                    e.s.mark();
-                    e.s.doc.laneCount = 0;                           // back to unlimited (tiled) lanes
-                    e.s.changed(false);
-                    e.s.lanePick.clear();
-                    for (int id : new int[]{-2, -1, 1, 2}) e.s.lanePick.add(id);
-                    e.s.laneSel = 1;
-                    e.insp.tab = Inspector.FIELD;
-                }
+                if (e != null) e.insp.tab = Inspector.FIELD;
                 break;
             case 134:
                 if (e != null) {
-                    e.insp.applyPartialScale(e.s, e.s.doc);
                     e.s.mark();
                     e.s.doc.laneScale = 0.9f;
                     e.s.doc.laneScaleEv.add(new Doc.Ev(44f, 46f, 0.9f, 1.1f, 1f));
@@ -227,14 +192,8 @@ final class AutoTest {
             case 136:
                 if (e != null) {
                     LaneLayout lay = e.pv.engine().layout();
-                    Doc.DLane one = e.s.doc.lane(1);
-                    Doc.Ev w = one != null && !one.widthEv.isEmpty() ? one.widthEv.get(0) : null;
-                    log("scale at beat " + e.beat + ": tiled " + lay.tiled() + ", lane +1 width "
-                        + lay.width(lay.indexOf(1)) + " (expect 216), lane +3 left " + lay.left(lay.indexOf(3))
-                        + " (expect 1392); partial on +1: "
-                        + (w == null ? "none" : w.start + "-" + w.end + " " + w.from + "->" + w.to) + ", picked "
-                        + e.s.lanePick);
-                    e.s.lanePick.clear();
+                    log("scale at beat " + e.beat + ": key width " + lay.defaultWidth() + " (expect 216), x +600 at "
+                        + (lay.frameAxis() + lay.frameScale() * 600f) + " (expect 1500)");
                     e.s.mark();
                     e.s.doc.cameraFrame = 120f;                      // axis 120 right of the centre
                     e.s.doc.cameraFrameEv.add(new Doc.Ev(44f, 46f, 120f, -120f, 1f));
@@ -244,9 +203,8 @@ final class AutoTest {
             case 138:
                 if (e != null) {
                     LaneLayout lay = e.pv.engine().layout();
-                    log("camera frame 120 at beat " + e.beat + ": axis " + lay.axis() + " (expect 1080), lane +1 left "
-                        + lay.left(lay.indexOf(1)) + " (expect 1080), lane -1 right " + lay.right(lay.indexOf(-1))
-                        + " (expect 1080), lane +3 left " + lay.left(lay.indexOf(3)) + " (expect 1512)");
+                    log("camera frame 120 at beat " + e.beat + ": axis " + lay.frameAxis() + " (expect 1080), x +600"
+                        + " at " + (lay.frameAxis() + lay.frameScale() * 600f) + " (expect 1620)");
                 }
                 break;
             case 139:
@@ -254,11 +212,11 @@ final class AutoTest {
                 break;
             case 132:
                 app.im.keyDown(Input.Keys.NUM_1);
-                app.im.mouseMoved(Math.round(EditorScreen.ux(714f)), 560); // reference x 714
+                app.im.mouseMoved(Math.round(EditorScreen.ux(714f)), py(737f)); // reference x 714
                 break;
             case 142:
                 if (e != null) notesBefore = e.s.doc.notes.size();
-                click(Math.round(EditorScreen.ux(714f)), 560);
+                click(Math.round(EditorScreen.ux(714f)), py(737f));
                 break;
             case 145:
                 if (e != null) {
@@ -280,17 +238,17 @@ final class AutoTest {
                 break;
             case 147:
                 app.im.keyDown(Input.Keys.NUM_2);
-                app.im.touchDown(Math.round(EditorScreen.ux(1628f)), 600, 0, Input.Buttons.LEFT); // reference x 1628
+                app.im.touchDown(Math.round(EditorScreen.ux(1628f)), py(797f), 0, Input.Buttons.LEFT); // ref x 1628
                 break;
-            case 148: app.im.touchDragged(Math.round(EditorScreen.ux(1628f)), 520, 0); break;
-            case 149: app.im.touchDragged(Math.round(EditorScreen.ux(1628f)), 440, 0); break;
-            case 151: app.im.touchUp(Math.round(EditorScreen.ux(1628f)), 440, 0, Input.Buttons.LEFT); break;
+            case 148: app.im.touchDragged(Math.round(EditorScreen.ux(1628f)), py(677f), 0); break;
+            case 149: app.im.touchDragged(Math.round(EditorScreen.ux(1628f)), py(557f), 0); break;
+            case 151: app.im.touchUp(Math.round(EditorScreen.ux(1628f)), py(557f), 0, Input.Buttons.LEFT); break;
             case 152:
                 if (e != null) {
                     Doc.DNote last = e.s.doc.notes.get(e.s.doc.notes.size() - 1);
                     for (Doc.DNote n : e.s.doc.notes) if (n.uid > last.uid) last = n;
                     log("tempo 182 -> 91 at beat 48: beat 60 at " + e.s.beatToMs(60f) + " ms (expect ~23736.3)");
-                    log("dragged note: " + last.type + " lane " + last.lane + " beat " + last.judgement + " duration "
+                    log("dragged note: " + last.type + " x " + last.x + " beat " + last.judgement + " duration "
                         + last.duration);
                     e.save(null);
                 }
@@ -316,7 +274,9 @@ final class AutoTest {
             case 174:
                 if (e != null) previewWindow(e, true);
                 break;
-            case 176: click((int) (EditorScreen.PX + EditorScreen.PW) - 254 + 59, 68 + 24); break; // sync：高亮 → 增强
+            case 176:                                               // sync：高亮 → 增强
+                click((int) (EditorScreen.PX + EditorScreen.PW) - 254 + 59, (int) EditorScreen.PY + 24);
+                break;
             case 178: if (e != null) log("preview sync hint after one click: "
                 + EditorScreen.SYNC_LABELS[e.pv.syncHint()] + " (expect 增强)");
                 if (e != null) previewWindow(e, false);              // (177 releases the click)
@@ -381,17 +341,8 @@ final class AutoTest {
             case 215:                                               // 轨道插入 (Kelvin 10-15)
                 if (e != null) e.seekBeat(8f);
                 break;
-            case 216:
-                if (e != null) laneInsert(e);
-                break;
-            case 219:
-                if (e != null) laneBetween(e);
-                break;
             case 222:                                               // 旋转中心 (Kelvin 10-16)
                 if (e != null) pivotTest(e);
-                break;
-            case 226:                                               // 删除轨道 (Kelvin 10-17)
-                if (e != null) laneDelete(e);
                 break;
             case 227:                                               // 1920 × 1200 (Kelvin 10-19)
                 if (e != null) frame1200(e);
@@ -409,6 +360,8 @@ final class AutoTest {
                     tideMines(e);
                     fakeRigid(e);
                     holdStill(e);
+                    motionUnits();
+                    linkUnits();
                 }
                 break;
             case 240: app.im.keyDown(Input.Keys.NUM_9); break;      // 漩涡 tool (Kelvin 2026-11-01)
@@ -447,10 +400,10 @@ final class AutoTest {
             case 246:                                               // drag the hexagon by its centre
                 if (e != null) {
                     Doc.DVeil v = e.s.doc.veilByUid(polyUid);
-                    press(EditorScreen.ux(Field.x(v.x)), EditorScreen.uy(Field.y(v.y)));
+                    press(EditorScreen.ux(Field.x(v.x + LaneLayout.TILE_CENTRE)), EditorScreen.uy(Field.y(v.y)));
                 }
                 break;
-            case 247: app.im.touchDragged(at[0] + 120, at[1] - 60, 0); break;
+            case 247: app.im.touchDragged(at[0] + px(180f), at[1] - px(90f), 0); break;
             case 248: app.im.touchUp(at[0] + 120, at[1] - 60, 0, Input.Buttons.LEFT); break;
             case 249: if (e != null) veilDragged(e); break;
             case 250:
@@ -463,13 +416,13 @@ final class AutoTest {
                 break;
             case 253:                                               // 实机 (Kelvin 2026-10-27)
             case 257:
-                click((int) (EditorScreen.PX + EditorScreen.PW) - 254 + 183, 68 + 24);
+                click((int) (EditorScreen.PX + EditorScreen.PW) - 254 + 183, (int) EditorScreen.PY + 24);
                 break;
             case 255:                                               // a curtain over the HUD corner (Kelvin 10-31)
                 if (e != null) {
                     Doc.DVeil cu = new Doc.DVeil();
                     cu.radius = 420f;
-                    cu.x = 1560f;
+                    cu.x = 600f;                                     // 1560 in the frame
                     cu.y = 900f;
                     e.s.doc.curtains.add(cu);
                     e.s.changed(false);
@@ -483,8 +436,973 @@ final class AutoTest {
                 }
                 break;
             case 259: if (e != null) log("实机 off: marks back " + e.overlays + " (expect true)"); break;
+            case 260: if (e != null) motionSetup(e); break;               // 运动器 (Kelvin 2026-11-05)
+            case 261:
+                // bring the motion bar to y 300 whichever way the 滚动条 test left the page
+                if (e != null) e.insp.scroll[Inspector.NOTE] = Math.max(0f,
+                    e.insp.scroll[Inspector.NOTE] + e.insp.testBarY - 300f);
+                break;
+            case 263: if (e != null) press(Inspector.TEST_CX + 14f, e.insp.testBarY + 32f + 2f * 34f + 15f); break;
+            case 264: app.im.touchDragged(at[0], at[1] - 34, 0); break;
+            case 265: app.im.touchDragged(at[0], at[1] - 68, 0); break;
+            case 266: app.im.touchUp(at[0], at[1] - 68, 0, Input.Buttons.LEFT); break;
+            case 267:
+                if (e != null) {
+                    log("reorder: " + cards(motionNote.move) + " (expect 3 2 1200 900 | 2 1.5 900 600 | 1.5 0 600 0)");
+                    click(Math.round(Inspector.TEST_CX + Inspector.TEST_CW - 140f), Math.round(e.insp.testKeepY + 14f));
+                }
+                break;
+            case 269:
+                if (e != null) {
+                    log("keep values: " + cards(motionNote.move)
+                        + " (expect 3 2 300 0 | 2 1.5 1200 900 | 1.5 0 900 300)");
+                    float w3 = (Inspector.TEST_CW - 16f) / 3f;
+                    click(Math.round(Inspector.TEST_CX + 2f * (w3 + 8f) + 20f), Math.round(e.insp.testBarY + 13f));
+                }
+                break;
+            case 271: if (e != null) clickUi(Inspector.TEST_CX + 20f, e.insp.testBarY + 13f); break;
+            case 273:
+                if (e != null) {
+                    log("copied: " + (e.insp.clip != null ? e.insp.clip.evs.size() : 0) + " (expect 3)");
+                    e.s.select(others[0], false);
+                    e.s.select(others[1], true);
+                }
+                break;
+            case 275: if (e != null) clickUi(Inspector.TEST_CX + 20f, e.insp.testPasteY + 16f); break;
+            case 277:
+                if (e != null) {
+                    log("paste default 按各自判定: " + cards(others[1].move)
+                        + " (expect 3 2 300 0 | 2 1.5 1200 900 | 1.5 0 900 300)");
+                    float seg = (Inspector.TEST_CW - 16f) / 3f;
+                    click(Math.round(Inspector.TEST_CX + 8f + seg * 0.5f), Math.round(e.insp.testPasteBarY + 42f));
+                }
+                break;
+            case 279:
+                if (e != null) {
+                    log("paste 按原拍: " + cards(others[1].move, motionNote.judgement)
+                        + " (expect 3 2 300 0 | 2 1.5 1200 900 | 1.5 0 900 300)");
+                    e.s.select(motionNote, false);
+                }
+                break;
+            case 281: if (e != null) clickUi(Inspector.TEST_CX + 40f, e.insp.testStartY + 15f); break;
+            case 283:
+                for (char ch : "/-0.5".toCharArray()) app.im.keyTyped(ch);
+                break;
+            case 285: app.im.keyDown(Input.Keys.ENTER); break;
+            case 287:
+                if (e != null) {
+                    log("/-0.5 in 开始: start " + Im.fmt(motionNote.move.get(0).start) + " (expect "
+                        + Im.fmt(e.snap(e.beat) - 0.5f) + ")");
+                    log("同步运动器: " + linkedCopies() + " (expect 3 linked 3 followed, 3 linked 3 followed)");
+                }
+                break;
+            // Drag and 叠加层 (game 7.177)
+            case 289: app.im.keyDown(Input.Keys.G); break;
+            case 291:
+                if (e != null) {
+                    log("G: Drag tool " + (e.tool == EditorScreen.T_DRAG) + " (expect true)");
+                    notesBefore = e.s.doc.notes.size();
+                    click(Math.round(EditorScreen.ux(714f)), py(737f));
+                }
+                break;
+            case 293:
+                if (e != null) dragLayers(e);
+                break;
+            case 295:
+                if (e != null) {
+                    Note gn = e.s.note(dragNote);
+                    float j = dragNote.judgement;
+                    log("layers in the game: " + (gn != null && gn.hasLayers()) + ", x " + (gn == null ? "-"
+                        : Im.fmt(gn.xAt(j - 1.25f) - dragNote.x)) + ", rotation layers " + (gn == null ? "-"
+                        : gn.rotationLayers().size()) + ", upper line layers "
+                        + e.s.chart.lineEvents().upperLayers().size() + " (expect true, 75, 1, 1)");
+                    e.save(null);
+                }
+                break;
+            case 297:
+                if (e != null) layersSaved(e);
+                break;
+            case 299:
+                if (e != null) {
+                    e.setTool(EditorScreen.T_SELECT);
+                    e.s.select(dragNote, false);
+                    e.insp.tab = Inspector.NOTE;
+                    e.insp.openEvents("n-xlay");
+                }
+                break;
+            case 303:
+                if (e != null) {
+                    e.insp.tab = Inspector.FIELD;
+                    e.insp.openEvents("f-up-l");
+                }
+                break;
+            // 悬浮键 (game 7.185): B, a tap put at x −360 y 720 at beat 8, dragged, turned, flipped, keyed, saved
+            case 306:
+                floatUnits();
+                if (e != null) {
+                    e.setTool(EditorScreen.T_TAP);
+                    e.floatMode = false;
+                    e.autoKey = false;
+                    e.s.sel.clear();
+                    e.seekBeat(8f);
+                    notesBefore = e.s.doc.notes.size();
+                }
+                app.im.keyDown(Input.Keys.B);
+                break;
+            case 308:
+            case 310:
+            case 315:
+            case 317:
+            case 319:
+            case 321:
+            case 325:
+            case 330:
+            case 332:
+            case 336:
+            case 338:
+            case 340:
+            case 345:
+            case 348:
+                if (e != null) floatStep(e, frame);
+                break;
+            case 311:
+            case 326:
+                app.im.touchDragged((floatAt[0] + floatAt[2]) / 2, (floatAt[1] + floatAt[3]) / 2, 0);
+                break;
+            case 312:
+            case 327:
+                app.im.touchDragged(floatAt[2], floatAt[3], 0);
+                break;
+            case 313:
+            case 328:
+                app.im.touchUp(floatAt[2], floatAt[3], 0, Input.Buttons.LEFT);
+                break;
+            case 341:                                               // 图层: the 悬浮键 row's 键 dragged onto 地线
+                app.im.touchDragged((dragTo[0] + dragTo[2]) / 2, (dragTo[1] + dragTo[3]) / 2, 0);
+                break;
+            case 342:
+                app.im.touchDragged(dragTo[2], dragTo[3], 0);
+                break;
+            case 343:
+                app.im.touchUp(dragTo[2], dragTo[3], 0, Input.Buttons.LEFT);
+                break;
+            case 346:                                               // 实机 on, and off again
+            case 350:
+                click((int) (EditorScreen.PX + EditorScreen.PW) - 254 + 183, (int) EditorScreen.PY + 24);
+                break;
+            case 352:                                               // a floating long mine (game 7.186)
+            case 354:
+                if (e != null) floatStep(e, frame);
+                break;
+            // 定轨 / 无轨 (game 7.184): two sections added in 场地, a tap placed onto a lane, dragged to the next, saved
+            case 406:
+            case 408:
+            case 410:
+            case 412:
+            case 414:
+            case 416:
+            case 417:
+            case 419:
+            case 421:
+            case 422:
+            case 423:
+            case 424:
+            case 425:
+            case 427:
+            case 430:
+            case 432:
+                if (e != null) lanesStep(e, frame);
+                break;
+            // 快捷曲线 · 快捷事件 · 判定线跟着键抖 · 原地出现 / 长条收起 / 飞出屏幕 · 故障档位 (Kelvin 2026-11-06)
+            case 436:
+            case 438:
+            case 440:
+            case 442:
+            case 444:
+            case 446:
+            case 448:
+            case 450:
+            case 452:
+            case 454:
+            case 456:
+                if (e != null) quickStep(e, frame);
+                break;
             default:
         }
+    }
+
+    /** The keys of {@link #quickStep}: taps at 60 (lower) and 60.5 (upper), a hold at 61, a tap at 64 for the UI. */
+    private Doc.DNote[] qk;
+    private java.util.ArrayList<Doc.Ev> qkBefore;
+    private Doc.DStroke qs;
+
+    /**
+     * 快捷曲线 · 快捷事件 (Kelvin 2026-11-06): 原地出现, 飞出屏幕, 长条收起, 常用指数, 故障档位 and 判定线跟着键抖
+     * called directly; then 正弦 and 放上去 (抖动) clicked on a key's 移动; a custom line and a floating key with
+     * glitch and distortion (game 7.187) saved and read back; a click in the preview adds a point to the line.
+     */
+    private void quickStep(EditorScreen e, int f) {
+        Inspector in = e.insp;
+        Doc d = e.s.doc;
+        switch (f) {
+            case 436:
+                qk = new Doc.DNote[]{new Doc.DNote(NoteType.TAP, Line.LOWER, -600f, 60f),
+                    new Doc.DNote(NoteType.TAP, Line.UPPER, -600f, 60.5f),
+                    new Doc.DNote(NoteType.HOLD, Line.LOWER, -360f, 61f),
+                    new Doc.DNote(NoteType.TAP, Line.LOWER, 600f, 64f)};
+                qk[2].duration = 1f;
+                e.s.mark();
+                for (Doc.DNote n : qk) {
+                    n.approach(Note.DEFAULT_APPROACH_BEATS, n.spawn(), 1f);
+                    d.notes.add(n);
+                }
+                d.setAutoTail(qk[2]);
+                e.s.changed(false);
+                e.s.select(qk[3], false);
+                in.tab = Inspector.NOTE;
+                in.openEvents("n-move");
+                in.qeKind = QuickEvents.SHAKE;
+                in.qeFor = "n-move";
+                e.seekBeat(56f);
+                break;
+            case 438: {
+                int c = in.motion(e.s, java.util.Arrays.asList(qk[0], qk[1]), 7);
+                log("原地出现 at " + Im.fmt(e.snap(e.beat)) + ": " + c + " keys, " + cards(qk[0].move, 0f) + " / "
+                    + cards(qk[1].move, 0f) + " (expect 2, -56 -58 1080 1080 | -58 -60 1080 0 / -56.25 -58.5 1080 1080 "
+                    + "| -58.5 -60.5 1080 0)");
+                e.seekBeat(59f);
+                break;
+            }
+            case 440: {
+                in.motion(e.s, java.util.Collections.singletonList(qk[1]), 9);
+                in.motion(e.s, java.util.Collections.singletonList(qk[2]), 8);
+                float h = qk[2].height;
+                log("飞出屏幕 / 长条收起: " + cards(qk[1].move, 0f) + " / " + cards(qk[2].move, 0f) + " · "
+                    + cards(qk[2].heightEv, 0f) + " (expect -56.25 -58.5 1080 1080 | -58.5 -59 1080 810 | -59 -61 810"
+                    + " -400 / -59 -61 1080 0 | -61 -62 0 " + Im.fmt(h) + " · -61 -62 " + Im.fmt(h) + " 0)");
+                in.openEvents("n-height");
+                in.applyCurve(e.s, qk[2].heightEv, QuickEvents.LINEAR, 0, 2.2f);
+                in.openEvents("n-move");                            // back to the selected tap's 移动 for the UI
+                int g = in.glitchKeys(e.s, java.util.Arrays.asList(qk[0], qk[2]), 2);
+                Doc.DGlitch g0 = qk[0].glitches.get(0), g2 = qk[2].glitches.get(0);
+                log("常用指数 2.2: " + Im.fmt(qk[2].heightEv.get(0).exp) + "; 故障中: " + g + " keys, " + Im.fmt(g0.from)
+                    + "–" + Im.fmt(g0.to) + " " + Im.fmt(g0.intensity) + "/" + Im.fmt(g0.split) + "/" + Im.fmt(g0.slice)
+                    + "/" + Im.fmt(g0.flicker) + "/" + Im.fmt(g0.rate) + ", " + Im.fmt(g2.from) + "–" + Im.fmt(g2.to)
+                    + " (expect 2.2; 2 keys, 56–60 0.5/1.4/1.2/0.2/16, 59–62)");
+                int lo = d.lowerLay.size(), up = d.upperLay.size();
+                int k = in.lineShake(e.s, java.util.Arrays.asList(qk), 20f, 0);
+                StringBuilder b = new StringBuilder();
+                for (Doc.Ev x : d.lowerLay) if (x.tag != null && x.start >= 59.9f) b.append(' ').append(Im.fmt(x.to));
+                for (Doc.Ev x : d.upperLay) if (x.tag != null && x.start >= 59.9f) b.append(' ').append(Im.fmt(x.to));
+                int lo2 = d.lowerLay.size(), up2 = d.upperLay.size();
+                e.s.undo();                                         // the doc before it comes back as e.s.doc
+                log("判定线跟着键抖: " + k + " kicks, +" + (lo2 - lo) + " lower +" + (up2 - up) + " upper, kicks to" + b
+                    + ", undo back " + (e.s.doc.lowerLay.size() == lo && e.s.doc.upperLay.size() == up)
+                    + " (expect 4 kicks, +6 lower +2 upper, kicks to -20 0 -20 0 -20 0 20 0, undo back true)");
+                e.s.redo();
+                log("redo: the same doc again " + (e.s.doc == d) + " (expect true)");
+                e.seekBeat(62f);
+                in.scroll[Inspector.NOTE] = Math.max(0f, in.scroll[Inspector.NOTE] + in.testCurveY - 200f);
+                break;
+            }
+            case 442: {                                             // 正弦 (缓出) on the selected key's fall
+                float bw = (Inspector.TEST_CW - 30f) / 6f;
+                clickUi(Inspector.TEST_CX + bw + 6f + bw / 2f, in.testCurveY + 36f + 15f);
+                break;
+            }
+            case 444:
+                log("正弦缓出: " + qk[3].move.size() + " cards, " + Im.fmt(qk[3].move.get(0).from) + " → "
+                    + Im.fmt(qk[3].move.get(qk[3].move.size() - 1).to) + " (expect 3, 1080 → 0)");
+                qkBefore = new java.util.ArrayList<>(qk[3].move);
+                break;
+            case 446:                                               // the form has moved down under the new cards
+                clickUi(Inspector.TEST_CX + 20f, in.testQeGoY + 16f);
+                break;
+            case 448: {
+                double t = 62.0 + 2.0 / 7.0;
+                double dv = QuickEvents.valueAt(qk[3].move, 0f, false, t) - QuickEvents.valueAt(qkBefore, 0f, false, t);
+                log("抖动 on 移动: " + qk[3].move.size() + " cards, first swing +" + Im.fmt(QuickEvents.round(dv))
+                    + ", ends " + Im.fmt(qk[3].move.get(qk[3].move.size() - 1).to) + " at "
+                    + Im.fmt(qk[3].move.get(qk[3].move.size() - 1).end) + " (expect +60 within 1.8, ends 0 at 64)");
+                e.s.mark();
+                qs = new Doc.DStroke();                             // 自定义线条 (game 7.187)
+                qs.points = new float[]{-700f, 300f, -300f, 700f, 100f, 300f, 500f, 700f};
+                qs.curve = true;
+                qs.from = 60f;
+                qs.to = 66f;
+                qs.drawIn = 0.5f;
+                qs.drawOut = 0.5f;
+                qs.width = 8f;
+                qs.color = 0xFFB0B0FF;
+                qs.opacity = 0.8f;
+                qs.opacityEv.add(new Doc.Ev(63f, 65f, 0.8f, 0.3f, 1f));
+                Doc.DGlitch gl = new Doc.DGlitch();
+                gl.from = 64f;
+                gl.to = 65f;
+                qs.glitches.add(gl);
+                Inspector.glitchLevel(qs.glitches, 2);
+                Doc.DDist ds = new Doc.DDist();
+                ds.from = 65f;
+                ds.to = 66f;
+                ds.intensity = 1f;
+                qs.distortions.add(ds);
+                d.strokes.add(qs);
+                Doc.DNote fl = new Doc.DNote(NoteType.TAP, Line.LOWER, 300f, 66f);   // a floating key's glitch
+                fl.toFloating(500f);
+                fl.glitches.add(gl.copy());
+                fl.distortions.add(ds.copy());
+                d.notes.add(fl);
+                e.s.changed(false);
+                e.save(null);
+                break;
+            }
+            case 450:
+                try {
+                    Doc back = Doc.fromChart(ChartMapper.read(e.s.file, null, null));
+                    Doc.readRelFlags(back, e.s.file);
+                    Doc.DStroke b = back.strokes.isEmpty() ? null : back.strokes.get(back.strokes.size() - 1);
+                    int fg = 0;
+                    for (Doc.DNote n : back.notes) if (n.floating && n.judgement == 66f) fg += n.glitches.size() * 10
+                        + n.distortions.size();
+                    log("快捷 saved: identical json " + d.toJson().equals(back.toJson()) + "; line " + (b == null ? "-"
+                        : b.pointCount() + " points " + Doc.colorText(b.color) + " " + b.curve + " " + Im.fmt(b.width)
+                        + " " + b.opacityEv.size() + "/" + b.glitches.size() + "/" + b.distortions.size()
+                        + " glitch " + Im.fmt(b.glitches.get(0).intensity)) + "; floating key glitch/distortion " + fg
+                        + " (expect true; 4 points #FFB0B0 true 8 1/1/1 glitch 0.5; 11)");
+                } catch (Exception x) {
+                    log("快捷 saved: " + x);
+                }
+                in.tab = Inspector.STROKE;
+                in.strokeSel = qs.uid;
+                break;
+            case 452: {                                             // a click right of the keys adds a fifth point
+                LaneLayout lay = e.pv.engine().layout();
+                click(Math.round(EditorScreen.PX + (lay.frameAxis() + lay.frameScale() * 840f) * EditorScreen.K),
+                    Math.round(EditorScreen.uy(Field.y(960f))));
+                break;
+            }
+            case 454:
+                log("线条 click: " + qs.pointCount() + " points, the last at " + (qs.pointCount() < 5 ? "-"
+                    : Im.fmt(qs.points[8]) + ", " + Im.fmt(qs.points[9])) + " (expect 5, about 840, 960)");
+                break;
+            case 456:                                               // bar lines and bold whole beats (11-06)
+                e.floatMode = false;
+                e.setTool(EditorScreen.T_TAP);
+                e.seekBeat(63.5f);
+                break;
+            default:
+        }
+    }
+
+    /** y of 场地's first button, the 定轨 one, in a chart without sections (Inspector top 102 + 14 + title 26 + 16). */
+    private static final float LANE_ADD_Y = 158f;
+    /** A key's place on screen (x, y) and where a drag takes it (x). */
+    private final int[] keyAt = new int[3];
+    private Doc.DNote laneKey;
+
+    /** Puts where centre-line x {@code x} on the lower line is now on screen into {@code keyAt[0..1]}. */
+    private void keyOnScreen(EditorScreen e, float x) {
+        LaneLayout lay = e.pv.engine().layout();
+        keyAt[0] = Math.round(EditorScreen.PX + (lay.frameAxis() + lay.frameScale() * x) * EditorScreen.K);
+        keyAt[1] = Math.round(EditorScreen.uy(e.pv.engine().lineY(Line.LOWER)));
+    }
+
+    /** 定轨 / 无轨 (game 7.184, Kelvin 2026-11-06) in the editor: 场地's sections, placing and dragging onto lanes. */
+    private void lanesStep(EditorScreen e, int f) {
+        Doc d = e.s.doc;
+        switch (f) {
+            case 406:
+                laneUnits();
+                e.autoKey = false;
+                e.setTool(EditorScreen.T_SELECT);
+                e.s.sel.clear();
+                e.s.mark();
+                d.fixedLanes.clear();
+                e.s.changed(false);
+                e.seekBeat(8f);
+                e.insp.tab = Inspector.FIELD;
+                java.util.Arrays.fill(e.insp.scroll, 0f);
+                break;
+            case 408:                                               // + 从第 0 拍定 6 轨
+                clickUi(Inspector.TEST_CX + 60f, LANE_ADD_Y);
+                break;
+            case 410:
+                log("定轨 added: " + lanesOf(d) + ", the game at 8 " + e.s.chart.fixedLanesAt(8f) + " (expect 0:6, 6)");
+                e.seekBeat(16f);
+                break;
+            case 412:                                               // + 在播放头改轨道数: 无轨 from 16 on
+                clickUi(Inspector.TEST_CX + 60f, LANE_ADD_Y + 44f);
+                break;
+            case 414:
+                log("定轨 second: " + lanesOf(d) + ", the game at 20 " + e.s.chart.fixedLanesAt(20f)
+                    + " (expect 0:6 16:0, 0)");
+                e.seekBeat(8f);
+                e.setTool(EditorScreen.T_TAP);
+                e.s.placeLine = Line.LOWER;
+                break;
+            case 416:                                               // a tap at x 100 lands on the lane at 160
+                keyOnScreen(e, 100f);
+                app.im.touchDown(keyAt[0], keyAt[1], 0, Input.Buttons.LEFT);
+                break;
+            case 417:
+                app.im.touchUp(keyAt[0], keyAt[1], 0, Input.Buttons.LEFT);
+                break;
+            case 419: {
+                java.util.ArrayList<Doc.DNote> sel = e.s.selected();
+                laneKey = sel.size() == 1 ? sel.get(0) : null;
+                log("定轨 placed: " + (laneKey == null ? "-" : Im.fmt(laneKey.x) + " at " + Im.fmt(laneKey.judgement))
+                    + ", snap 100 / -1000 at 8 " + Im.fmt(e.snapX(100f, 8f)) + " " + Im.fmt(e.snapX(-1000f, 8f))
+                    + ", at 20 " + Im.fmt(e.snapX(100f, 20f)) + ", ‹ › at 8 " + Im.fmt(e.nudgeX(160f, 8f, 1)) + " "
+                    + Im.fmt(e.nudgeX(100f, 8f, -1)) + " " + Im.fmt(e.nudgeX(800f, 8f, 1)) + ", at 20 "
+                    + Im.fmt(e.nudgeX(100f, 20f, 1)) + " (expect 160 at 8, 160 -800, 120, 320 0 800, 220)");
+                e.xStep = 60f;                                      // finer 坐标吸附: 1/4 lanes, then 1/8 (11-06)
+                String quarter = Im.fmt(e.snapX(100f, 8f)) + " " + Im.fmt(e.nudgeX(160f, 8f, 1));
+                e.xStep = 10f;
+                log("坐标吸附 60: " + quarter + "; 10: " + Im.fmt(e.snapX(100f, 8f)) + " " + Im.fmt(e.snapX(13f))
+                    + " (expect 80 240; 120 10)");
+                e.xStep = 120f;
+                e.setTool(EditorScreen.T_SELECT);
+                break;
+            }
+            case 421:                                               // a key at the playhead cannot be picked up
+                e.seekBeat(7.5f);
+                break;
+            case 422: {                                             // drag it 130 to the right: onto the divider at 320
+                if (laneKey == null) break;
+                Note n = e.s.note(laneKey);
+                if (n == null) break;
+                float dp = n.positionAt(e.beat) - e.pv.hitShift(), far = dp + e.pv.bodyShift(laneKey.type, dp);
+                keyOnScreen(e, laneKey.x);
+                keyAt[1] = Math.round(EditorScreen.uy(e.pv.engine().lineY(Line.LOWER) + far
+                    + 0.5f * Math.max(e.pv.noteHeight(), 28f)));
+                keyAt[2] = keyAt[0] + Math.round(130f * e.pv.engine().layout().frameScale() * EditorScreen.K);
+                app.im.touchDown(keyAt[0], keyAt[1], 0, Input.Buttons.LEFT);
+                break;
+            }
+            case 423:
+            case 424:
+                app.im.touchDragged(keyAt[2], keyAt[1], 0);
+                break;
+            case 425:
+                app.im.touchUp(keyAt[2], keyAt[1], 0, Input.Buttons.LEFT);
+                break;
+            case 427:
+                log("定轨 dragged: " + (laneKey == null ? "-" : Im.fmt(laneKey.x) + " at " + Im.fmt(laneKey.judgement))
+                    + " (expect 320 at 8)");
+                e.seekBeat(8f);
+                e.insp.tab = Inspector.FIELD;
+                break;
+            case 430:
+                e.save(null);
+                break;
+            case 432:
+                try {
+                    Doc back = Doc.fromChart(ChartMapper.read(e.s.file, null, null));
+                    Doc.readRelFlags(back, e.s.file);
+                    log("定轨 saved: " + lanesOf(back) + ", identical json " + d.toJson().equals(back.toJson())
+                        + " (expect 0:6 16:0, true)");
+                } catch (Exception x) {
+                    log("定轨 saved: " + x);
+                }
+                break;
+            default:
+        }
+    }
+
+    /** @return a chart's 定轨 sections as {@code beat:count}, space-separated ({@code -} for none). */
+    private static String lanesOf(Doc d) {
+        StringBuilder b = new StringBuilder();
+        for (Doc.Lanes l : d.fixedLanes) {
+            b.append(b.length() > 0 ? " " : "").append(Im.fmt(l.beat)).append(':').append(l.count);
+        }
+        return b.length() > 0 ? b.toString() : "-";
+    }
+
+    /**
+     * 定轨 / 无轨 (game 7.184): a new chart has 6 lanes from beat 0; sections written out of order read back from v4
+     * and v6 text in order; the count at a beat, the editor's and the game's.
+     */
+    private void laneUnits() {
+        Doc d = Doc.blank("lanes", "", "", "", 120f, 0f);
+        boolean blank = d.toJson().contains("\"fixedLanes\": [{ \"beat\": 0, \"count\": 6 }]");
+        d.fixedLanes.clear();
+        d.fixedLanes.add(new Doc.Lanes(16f, 0));
+        d.fixedLanes.add(new Doc.Lanes(0f, 6));
+        d.fixedLanes.add(new Doc.Lanes(32f, 4));
+        Doc.DNote k = new Doc.DNote(NoteType.TAP, Line.LOWER, 160f, 4f);
+        k.approach(Note.DEFAULT_APPROACH_BEATS, Doc.SPAWN, 1f);
+        d.notes.add(k);
+        // a whole-line key turning about its pivot keeps the pivot (as My Soul and 氷点 Deep have them)
+        Doc.DNote w = new Doc.DNote(NoteType.UNIVERSAL, Line.UPPER, 0f, 6f);
+        w.approach(Note.DEFAULT_APPROACH_BEATS, Doc.SPAWN, 1f);
+        w.rot.add(new Doc.Ev(4f, 6f, 0f, 90f, 1f));
+        w.pivotY = -300f;
+        d.notes.add(w);
+        try {
+            // as the editor reads a file back (without its editor-only keys), so the three texts compare alike
+            Chart c = ChartMapper.read(new java.io.ByteArrayInputStream(d.toJson().getBytes("UTF-8")), "lanes.json");
+            String a = Doc.fromChart(c).toJson();
+            Doc d4 = Doc.fromChart(ChartMapper.read(new java.io.ByteArrayInputStream(a.getBytes("UTF-8")), "l.json"));
+            org.kelvinizer.elements.ChartUpgrade.Result r =
+                org.kelvinizer.elements.ChartUpgrade.upgrade("lanes.json", a.getBytes("UTF-8"));
+            Doc d6 = Doc.fromChart(ChartMapper.read(new java.io.ByteArrayInputStream(r.json.getBytes("UTF-8")),
+                "lanes.json", org.kelvinizer.elements.SongInfo.of(c)));
+            log("定轨 units: new chart " + blank + ", " + lanesOf(d) + ", the game at -1 8 20 40 " + c.fixedLanesAt(-1f)
+                + " " + c.fixedLanesAt(8f) + " " + c.fixedLanesAt(20f) + " " + c.fixedLanesAt(40f) + ", the editor "
+                + d.lanesAt(-1f) + " " + d.lanesAt(8f) + " " + d.lanesAt(20f) + " " + d.lanesAt(40f) + ", v4 "
+                + a.equals(d4.toJson()) + ", v6 " + a.equals(d6.toJson()) + " " + lanesOf(d6) + ", v6 text "
+                + r.json.contains("fixedLanes") + " (expect true, 0:6 16:0 32:4, the game 6 6 0 4, the editor 6 6 0 4,"
+                + " v4 true, v6 true 0:6 16:0 32:4, v6 text true)");
+            float wp = Float.NaN;
+            for (Note n : c.notes()) if (n.type() == NoteType.UNIVERSAL) wp = n.pivotY();
+            log("whole-line pivot: a tide's pivot y " + Im.fmt(wp) + ", in v6 "
+                + r.json.contains("\"pivot\": [0, -300]")
+                + " (expect -300, true)");
+        } catch (Exception x) {
+            log("定轨 units: " + x);
+        }
+    }
+
+    /** From and to of a drag in 图层 (screen x, y). */
+    private final int[] dragTo = new int[4];
+    /** Where a floating key is pressed (0, 1) and where the drag takes it (2, 3), on screen. */
+    private final int[] floatAt = new int[4];
+
+    /** Puts where a floating key at centre-line x {@code x}, height {@code y} shows now into floatAt[i], [i + 1]. */
+    private void floatSpot(EditorScreen e, float x, float y, int i) {
+        LaneLayout lay = e.pv.engine().layout();
+        floatAt[i] = Math.round(EditorScreen.ux(lay.frameAxis() + lay.frameScale() * x));
+        floatAt[i + 1] = Math.round(EditorScreen.uy(Field.y(y)));
+    }
+
+    /** @return the chart's first floating key (the test puts one), or null */
+    private static Doc.DNote floating(EditorScreen e) {
+        for (Doc.DNote n : e.s.doc.notes) if (n.floating) return n;
+        return null;
+    }
+
+    /** @return a key as "type at beat x … y …" ("-" for none) */
+    private static String where(Doc.DNote n) {
+        return n == null ? "-" : n.type.json + " at " + Im.fmt(n.judgement) + " x " + Doc.num(n.x) + " y "
+            + Doc.num(n.y);
+    }
+
+    /** 悬浮键 (game 7.185) in the editor: placed with B on, dragged, turned, flipped, keyed, saved, moved in 图层. */
+    private void floatStep(EditorScreen e, int f) {
+        Doc.DNote k = floating(e);
+        switch (f) {
+            case 308:
+                log("B: 悬浮 " + e.floatMode + ", tool tap " + (e.tool == EditorScreen.T_TAP) + " (expect true, true)");
+                floatSpot(e, -360f, 720f, 0);
+                click(floatAt[0], floatAt[1]);
+                break;
+            case 310: {
+                Note gn = k != null ? e.s.note(k) : null;
+                log("悬浮 placed: " + (e.s.doc.notes.size() - notesBefore) + ", " + where(k) + ", selected "
+                    + (k != null && e.s.sel.contains(k.uid)) + ", in the game " + (gn != null && gn.floats()
+                    ? Im.fmt(gn.floating().x()) + " " + Im.fmt(gn.floating().y()) + " size "
+                    + Im.fmt(gn.floating().size()) + " appear " + Im.fmt(gn.floating().appear()) : "-")
+                    + " (expect 1, tap at 8 x -360 y 720, selected true, in the game -360 720 size "
+                    + Im.fmt(Floating.TAP_SIZE) + " appear 6)");
+                floatSpot(e, -360f, 720f, 0);
+                floatSpot(e, -120f, 960f, 2);
+                app.im.touchDown(floatAt[0], floatAt[1], 0, Input.Buttons.LEFT);
+                break;
+            }
+            case 315:
+                log("悬浮 dragged: " + where(k) + " (expect tap at 8 x -120 y 960)");
+                break;
+            case 317: {
+                // 旋转 (Ctrl+R): clockwise about the middle of the screen; a key on a line in the selection stays
+                Doc.DNote line = null;
+                for (Doc.DNote n : e.s.doc.notes) if (!n.floating && line == null) line = n;
+                if (line != null) e.s.select(line, true);
+                float lx = line != null ? line.x : 0f;
+                e.rotateFloating(-45f);
+                k = floating(e);
+                log("Ctrl+R: " + where(k) + ", the line key moved " + (line != null && line.x != lx)
+                    + " (expect tap at 8 x 170 y 939, false)");
+                e.undo();
+                log("Ctrl+R undone: " + where(floating(e)) + " (expect tap at 8 x -120 y 960)");
+                break;
+            }
+            case 319:
+                if (k == null) break;
+                e.s.select(k, false);
+                e.mirrorUpDown();
+                e.mirror();
+                log("Shift+M, M on a floating key: " + where(floating(e)) + " (expect tap at 8 x 120 y 240)");
+                e.undo();
+                e.undo();
+                log("undone: " + where(floating(e)) + " (expect tap at 8 x -120 y 960)");
+                break;
+            case 321:
+                e.autoKey = true;
+                if (k != null) e.s.select(k, false);
+                e.seekBeat(7f);
+                break;
+            case 325:
+                floatSpot(e, -120f, 960f, 0);
+                floatSpot(e, 120f, 960f, 2);
+                app.im.touchDown(floatAt[0], floatAt[1], 0, Input.Buttons.LEFT);
+                break;
+            case 330: {
+                Note gn = k != null ? e.s.note(k) : null;
+                log("自动关键帧 on a floating key: " + where(k) + ", x events " + (k == null ? "-" : evs(k.xEv))
+                    + ", in the game x at 5.5 / 7.5 " + (gn == null || !gn.floats() ? "-"
+                    : Im.fmt(gn.floating().xAt(5.5f)) + " / " + Im.fmt(gn.floating().xAt(7.5f)))
+                    + " (expect tap at 8 x -120 y 960, x events 6 7 -120 120, in the game -120 / 120)");
+                break;
+            }
+            case 332:
+                e.autoKey = false;
+                if (k == null) break;
+                e.s.mark();
+                k.size = 200f;
+                k.fillEv.add(new Doc.Ev(6f, 8f, 200f, 0f, 1f));
+                e.s.changed(false);
+                e.insp.tab = Inspector.NOTE;
+                break;
+            case 336:
+                e.save(null);
+                break;
+            case 338:
+                floatSaved(e);
+                break;
+            case 340: {
+                float[] p = e.layerSpot(null, true), q = e.layerSpot(Line.LOWER, false);
+                log("图层: 悬浮键 row " + (p != null) + " (expect true)");
+                if (p == null || q == null) break;
+                dragTo[0] = Math.round(p[0]);
+                dragTo[1] = Math.round(p[1]);
+                dragTo[2] = Math.round(q[0]);
+                dragTo[3] = Math.round(q[1]);
+                app.im.touchDown(dragTo[0], dragTo[1], 0, Input.Buttons.LEFT);
+                break;
+            }
+            case 345: {
+                Doc.DNote t = null;
+                for (Doc.DNote n : e.s.doc.notes) {
+                    if (n.type == NoteType.TAP && n.judgement == 8f && n.x == -120f) t = n;
+                }
+                log("图层: 悬浮键's 键 dragged onto 地线: floating " + (t != null && t.floating) + ", line "
+                    + (t == null ? "-" : t.line) + ", y events " + (t == null ? "-" : t.yEv.size())
+                    + " (expect false, LOWER, 0)");
+                e.undo();
+                log("图层: undone, " + where(floating(e)) + " (expect tap at 8 x -120 y 960)");
+                break;
+            }
+            case 348:
+                floatLive(e);
+                break;
+            case 352:
+                e.setTool(EditorScreen.T_LMINE);
+                e.seekBeat(12f);
+                notesBefore = e.s.doc.notes.size();
+                floatSpot(e, 720f, 600f, 0);
+                click(floatAt[0], floatAt[1]);
+                break;
+            case 354: {
+                Doc.DNote m = null;
+                for (Doc.DNote n : e.s.doc.notes) if (n.floating && n.type == NoteType.MINE) m = n;
+                Note gn = m != null ? e.s.note(m) : null;
+                boolean listed = false;
+                if (gn != null) for (Note x : e.s.chart.mines()) listed |= x == gn;
+                log("悬浮长水雷 placed: " + (e.s.doc.notes.size() - notesBefore) + ", " + where(m) + " for "
+                    + (m == null ? "-" : Im.fmt(m.duration)) + ", in the game size " + (gn == null || !gn.floats() ? "-"
+                    : Im.fmt(gn.floating().size())) + ", a mine of the chart " + listed
+                    + " (expect 1, mine at 12 x 720 y 600 for 1, in the game size " + Im.fmt(Floating.LONG_MINE_SIZE)
+                    + ", a mine of the chart true)");
+                e.floatMode = false;
+                break;
+            }
+            default:
+        }
+    }
+
+    /** The saved v6 file keeps the floating key (size, fill, x events), read back alike; one off screen warns. */
+    private void floatSaved(EditorScreen e) {
+        try {
+            Doc back = Doc.fromChart(ChartMapper.read(e.s.file, null, null));
+            Doc.readRelFlags(back, e.s.file);
+            String text = e.s.file.readString("UTF-8");
+            Doc.DNote k = floating(e);
+            Note gn = k != null ? e.s.note(k) : null;
+            log("悬浮 saved: identical json " + e.s.doc.toJson().equals(back.toJson()) + ", float "
+                + text.contains("\"float\"") + ", fillEvents " + text.contains("\"fillEvents\"") + ", size "
+                + (gn == null || !gn.floats() ? "-" : Im.fmt(gn.floating().size()) + ", fill at 7 "
+                + Im.fmt(gn.floating().fillAt(7f, gn.judgement()))) + " (expect true, true, true, 200, fill at 7 100)");
+        } catch (Exception x) {
+            log("悬浮 saved: " + x);
+        }
+        e.s.mark();
+        Doc.DNote far = new Doc.DNote(NoteType.TAP, Line.LOWER, 1100f, 9f);
+        far.toFloating(600f);
+        e.s.doc.notes.add(far);
+        e.s.changed(false);
+        e.checks.update(e.s);
+        int off = 0;
+        for (Checks.Item it : e.checks.items) if (it.text != null && it.text.contains("悬浮键")) off++;
+        e.undo();
+        int left = 0;
+        for (Doc.DNote n : e.s.doc.notes) if (n.floating) left++;
+        log("悬浮 checks: off the screen " + off + ", undone " + left + " floating (expect 1, 1)");
+    }
+
+    /** 实机 over the floating key's beat: autoplay hits it there. */
+    private void floatLive(EditorScreen e) {
+        liveRun(e, 7.5f, 8.5f);
+        Note[] all = e.pv.chart().notes();
+        String j = "-";
+        for (int i = 0; i < all.length; i++) {
+            if (all[i].floats() && Math.abs(all[i].judgement() - 8f) < 1e-3f) {
+                j = String.valueOf(e.pv.engine().noteJudgement(i));
+            }
+        }
+        log("实机 floating key: " + j + ", marks off " + !e.overlays + " (expect RESONANCE, true)");
+    }
+
+    /** @return a channel's events as "start end from to" (absolute beats) */
+    private static String evs(java.util.List<Doc.Ev> list) {
+        StringBuilder b = new StringBuilder();
+        for (Doc.Ev x : list) {
+            b.append(b.length() > 0 ? " | " : "").append(Im.fmt(x.start)).append(' ').append(Im.fmt(x.end))
+                .append(' ').append(Im.fmt(x.from)).append(' ').append(Im.fmt(x.to));
+        }
+        return b.length() > 0 ? b.toString() : "-";
+    }
+
+    /**
+     * 悬浮键 (game 7.185 / 7.186, CHART_FORMAT §11): the format's example (with a mine and a long mine) as v4 working
+     * text reads into the editor and writes back the same, through the game's v6 too, and the game reads sizes, appear
+     * beats, the chain and the x events.
+     */
+    private void floatUnits() {
+        String v4 = "{ \"formatVersion\": 4, \"laneless\": true, \"bpm\": 120, \"notes\": ["
+            + " { \"type\": \"tap\", \"float\": true, \"x\": -560, \"y\": 760, \"judgement\": 8 },"
+            + " { \"type\": \"tap\", \"float\": true, \"x\": -260, \"y\": 760, \"judgement\": 8 },"
+            + " { \"type\": \"hold\", \"float\": true, \"x\": 380, \"y\": 560, \"size\": 200, \"judgement\": 9,"
+            + " \"duration\": 3 },"
+            + " { \"type\": \"drag\", \"float\": true, \"x\": -500, \"y\": 360, \"judgement\": 10, \"chain\": \"c\" },"
+            + " { \"type\": \"drag\", \"float\": true, \"x\": -300, \"y\": 420, \"judgement\": 10.5,"
+            + " \"chain\": \"c\" },"
+            + " { \"type\": \"tap\", \"float\": true, \"x\": 100, \"y\": 880, \"judgement\": 12, \"appearance\": 10.5,"
+            + " \"fillEvents\": [ { \"startTime\": 10.5, \"endTime\": 12, \"initial\": 160, \"final\": 0,"
+            + " \"exponent\": 2 } ], \"xEvents\": [ { \"startTime\": 11, \"endTime\": 12, \"initial\": 100,"
+            + " \"final\": 300, \"exponent\": 1 } ] },"
+            + " { \"type\": \"mine\", \"float\": true, \"x\": 600, \"y\": 300, \"judgement\": 13 },"
+            + " { \"type\": \"mine\", \"float\": true, \"x\": -600, \"y\": 300, \"judgement\": 13, \"duration\": 2 } ],"
+            + " \"LineEvents\": { \"upperJudgementLine\": 1080, \"lowerJudgementLine\": 120, \"upperEvents\": [],"
+            + " \"lowerEvents\": [] } }";
+        try {
+            Chart c = ChartMapper.read(new java.io.ByteArrayInputStream(v4.getBytes("UTF-8")), "float.json");
+            Doc d = Doc.fromChart(c);
+            String a = d.toJson();
+            Doc d4 = Doc.fromChart(ChartMapper.read(new java.io.ByteArrayInputStream(a.getBytes("UTF-8")), "f.json"));
+            org.kelvinizer.elements.ChartUpgrade.Result r =
+                org.kelvinizer.elements.ChartUpgrade.upgrade("float.json", a.getBytes("UTF-8"));
+            Doc d6 = Doc.fromChart(ChartMapper.read(new java.io.ByteArrayInputStream(r.json.getBytes("UTF-8")),
+                "float.json", org.kelvinizer.elements.SongInfo.of(c)));
+            StringBuilder sz = new StringBuilder(), ap = new StringBuilder();
+            float x115 = Float.NaN;
+            for (Note n : c.notes()) {
+                if (!n.floats()) continue;
+                sz.append(Im.fmt(n.floating().size())).append(' ');
+                ap.append(Im.fmt(n.floating().appear())).append(' ');
+                if (n.judgement() == 12f) x115 = n.floating().xAt(11.5f);
+            }
+            int fl = 0;
+            String chain = "-";
+            for (Doc.DNote n : d.notes) {
+                if (n.floating) fl++;
+                if (n.type == NoteType.DRAG) chain = n.chain;
+            }
+            String t = Im.fmt(Floating.TAP_SIZE), dr = Im.fmt(Floating.DRAG_SIZE);    // the game's defaults
+            log("悬浮 units: " + fl + " of " + d.notes.size() + " floating, sizes " + sz + "| appear " + ap + "| chain "
+                + chain + ", x at 11.5 " + Im.fmt(x115) + ", v4 " + a.equals(d4.toJson()) + ", v6 "
+                + a.equals(d6.toJson()) + ", v6 text " + r.json.contains("\"float\"") + " (expect 8 of 8 floating,"
+                + " sizes " + t + " " + t + " 200 " + dr + " " + dr + " " + t + " "
+                + Im.fmt(Floating.LONG_MINE_SIZE) + " " + Im.fmt(Floating.MINE_SIZE)
+                + " | appear 6 6 7 8 8.5 10.5 11 11 | chain c, x at 11.5 200,"
+                + " v4 true, v6 true, v6 text true)");
+        } catch (Exception x) {
+            log("悬浮 units: " + x);
+        }
+    }
+
+    /** Places a Drag with the G tool's click, then gives it overlapping x layers and the upper line a layer. */
+    private void dragLayers(EditorScreen e) {
+        dragNote = null;
+        for (Doc.DNote n : e.s.doc.notes) if (n.type == NoteType.DRAG) dragNote = n;
+        Note gn = dragNote != null ? e.s.note(dragNote) : null;
+        log("Drag placed: " + (e.s.doc.notes.size() - notesBefore) + ", type " + (dragNote != null ? dragNote.type.json
+            : "-") + ", in the game " + (gn != null && gn.type() == NoteType.DRAG) + ", 假键 allowed "
+            + (dragNote != null && dragNote.canFake()) + " (expect 1, drag, true, true)");
+        if (dragNote == null) return;
+        float j = dragNote.judgement;
+        e.s.mark();
+        dragNote.xLay.add(new Doc.Ev(j - 2f, j - 1f, 0f, 120f, 1f));
+        dragNote.xLay.add(new Doc.Ev(j - 1.5f, j - 0.5f, 0f, -60f, 1f));
+        dragNote.posLay.add(new Doc.Ev(j - 2f, j, 100f, 0f, 1f));
+        dragNote.rotLay.add(new Doc.Ev(j - 2f, j, 30f, 0f, 1f));
+        e.s.doc.upperLay.add(new Doc.Ev(j - 4f, j, 0f, 50f, 1f));
+        e.s.changed(false);
+    }
+
+    /** The saved v6 file keeps the layers and the Drag, and reads back to the same editor text. */
+    private void layersSaved(EditorScreen e) {
+        try {
+            Doc back = Doc.fromChart(ChartMapper.read(e.s.file, null, null));
+            Doc.readRelFlags(back, e.s.file);
+            String text = e.s.file.readString("UTF-8"), a = e.s.doc.toJson(), b = back.toJson();
+            if (!a.equals(b)) {
+                int i = 0;
+                while (i < Math.min(a.length(), b.length()) && a.charAt(i) == b.charAt(i)) i++;
+                log("layers saved: first difference " + a.substring(Math.max(0, i - 80), Math.min(a.length(), i + 80))
+                    .replace('\n', ' ') + " ||| " + b.substring(Math.max(0, i - 80), Math.min(b.length(), i + 80))
+                    .replace('\n', ' '));
+            }
+            log("layers saved: identical json " + a.equals(b) + ", xLayers "
+                + text.contains("\"xLayers\"") + ", positionLayers " + text.contains("\"positionLayers\"")
+                + ", upperLayers " + text.contains("\"upperLayers\"") + ", drag " + text.contains("\"drag\"")
+                + " (expect true, true, true, true, true)");
+            log("links saved: " + text.contains("\"link\"") + " (expect true)");
+        } catch (Exception x) {
+            log("layers saved: " + x);
+        }
+    }
+
+    private void clickUi(float x, float y) {
+        click(Math.round(x), Math.round(y));
+    }
+
+    private Doc.DNote motionNote, dragNote;
+    private final Doc.DNote[] others = new Doc.DNote[2];
+
+    /**
+     * 运动器 (Kelvin 2026-11-05): a tap key with three 移动 cards (judgement − 3 → −2.5 → −1 → 0), the list open,
+     * two other taps for the paste, and the playhead two beats before the key for {@code /}.
+     */
+    private void motionSetup(EditorScreen e) {
+        e.s.mark();
+        float lane = -840f;  // the old lane −4
+        float j = 24f;
+        motionNote = new Doc.DNote(NoteType.TAP, Line.UPPER, lane, j);
+        others[0] = new Doc.DNote(NoteType.TAP, Line.UPPER, lane, j + 2f);
+        others[1] = new Doc.DNote(NoteType.TAP, Line.LOWER, lane, j + 3.5f);
+        e.s.doc.notes.add(motionNote);
+        e.s.doc.notes.add(others[0]);
+        e.s.doc.notes.add(others[1]);
+        motionNote.move.clear();
+        motionNote.move.add(new Doc.Ev(j - 3f, j - 2.5f, 1200f, 900f, 1f));
+        motionNote.move.add(new Doc.Ev(j - 2.5f, j - 1f, 900f, 300f, 2f));
+        motionNote.move.add(new Doc.Ev(j - 1f, j, 300f, 0f, 1f));
+        for (Doc.Ev ev : motionNote.move) ev.rel = true;
+        for (Doc.DNote o : others) o.move.clear();
+        e.s.changed(false);
+        e.s.select(motionNote, false);
+        e.insp.tab = Inspector.NOTE;
+        e.insp.openEvents("n-move");
+        e.seekBeat(j - 2f);
+    }
+
+    /** @return the cards of {@code list} as "start end from to" before {@code j} (the first key's judgement). */
+    private String cards(java.util.List<Doc.Ev> list) {
+        return cards(list, list == motionNote.move ? motionNote.judgement : others[list == others[0].move ? 0 : 1]
+            .judgement);
+    }
+
+    private static String cards(java.util.List<Doc.Ev> list, float j) {
+        StringBuilder b = new StringBuilder();
+        for (Doc.Ev ev : list) {
+            if (b.length() > 0) b.append(" | ");
+            b.append(Im.fmt(j - ev.start)).append(' ').append(Im.fmt(j - ev.end)).append(' ').append(Im.fmt(ev.from))
+                .append(' ').append(Im.fmt(ev.to));
+        }
+        return b.toString();
+    }
+
+    /** @return per pasted key "k linked m followed": its 同步链接 copies, and how many sit on their source (按原拍). */
+    private String linkedCopies() {
+        StringBuilder b = new StringBuilder();
+        for (Doc.DNote o : others) {
+            int k = 0, m = 0;
+            for (Doc.Ev f : o.move) {
+                if (f.link == null || f.link.src) continue;
+                k++;
+                for (Doc.Ev s : motionNote.move) {
+                    if (s.link != null && s.link.src && s.link.id == f.link.id && s.start == f.start && s.end == f.end
+                        && s.from == f.from && s.to == f.to) m++;
+                }
+            }
+            b.append(b.length() > 0 ? ", " : "").append(k).append(" linked ").append(m).append(" followed");
+        }
+        return b.toString();
+    }
+
+    /**
+     * 同步链接 without the UI: a source edit moves its copies, a retimed 按各自判定 copy stays linked, a copy changed by
+     * itself or left without its source is let go, and the editor text keeps the links.
+     */
+    private void linkUnits() {
+        Doc d = new Doc();
+        d.bpms.add(new Doc.Seg(0f, 120f));
+        Doc.DNote a = new Doc.DNote(NoteType.TAP, Line.UPPER, 0f, 10f);
+        Doc.DNote b = new Doc.DNote(NoteType.TAP, Line.LOWER, 240f, 12f);
+        Doc.DNote c = new Doc.DNote(NoteType.TAP, Line.UPPER, -240f, 14f);
+        d.notes.add(a);
+        d.notes.add(b);
+        d.notes.add(c);
+        Doc.Ev s = new Doc.Ev(8f, 9f, 0f, 90f, 1f), fb = new Doc.Ev(10f, 11f, 0f, 90f, 1f);
+        Doc.Ev fc = new Doc.Ev(8f, 9f, 30f, 120f, 1f);
+        s.link = Doc.Link.source(1);
+        fb.link = Doc.Link.copyOf(1, 0f, 0f, true);                 // 按各自判定: 2 beats later with b's judgement
+        fb.rel = true;
+        fc.link = Doc.Link.copyOf(1, 0f, 30f, false);               // 按原拍, 30 higher
+        a.rot.add(s);
+        b.rot.add(fb);
+        c.rot.add(fc);
+        StringBuilder r = new StringBuilder().append(d.relink());
+        s.start = 7f;
+        s.to = 180f;
+        r.append(' ').append(d.relink()).append(' ').append(Im.fmt(fb.start)).append('>').append(Im.fmt(fb.to))
+            .append(' ').append(Im.fmt(fc.start)).append('>').append(Im.fmt(fc.to));
+        b.retime(1f);
+        r.append(" | retime ").append(d.relink()).append(' ').append(Im.fmt(fb.start)).append(' ')
+            .append(fb.link != null);
+        fc.to = 999f;
+        r.append(" | own edit ").append(d.relink()).append(' ').append(Im.fmt(fc.to)).append(' ')
+            .append(fc.link != null);
+        String text = d.toJson();
+        r.append(" | text ").append(text.contains("\"link\": { \"id\": 1 }")).append(' ')
+            .append(text.contains("\"link\": { \"of\": 1, \"dt\": 0, \"dv\": 0, \"judge\": true }"));
+        a.rot.clear();
+        r.append(" | source gone ").append(d.relink()).append(' ').append(fb.link != null);
+        log("link units: " + r + " (expect 0 0 9>180 7>210 | retime 0 10 true | own edit 1 999 false | text true true"
+            + " | source gone 1 false)");
+    }
+
+    /** 特殊编号 / and 运动器排序 without the UI: parse, the tablet's ±1/4, and the re-timing of a reorder. */
+    private void motionUnits() {
+        Im im = app.im;
+        log("slash: " + Im.fmt(im.parse("/", 12f)) + " " + Im.fmt(im.parse("/+1", 12f)) + " "
+            + Im.fmt(im.parse(" / - 0.5", 12f)) + " " + Float.isNaN(im.parse("/2", 12f)) + " " + Float.isNaN(im.parse("1/4", 12f)) + " "
+            + Float.isNaN(im.parse("/", Float.NaN)) + " " + Im.fmt(im.parse("3.5", Float.NaN))
+            + " (expect 12 13 11.5 true true true 3.5)");
+        log("nudge: " + Im.nudge("/", 0.25f) + " " + Im.nudge("/+0.25", -0.25f) + " " + Im.nudge("/-1", -0.25f) + " "
+            + Im.nudge("7", 0.25f) + " " + Im.nudge("", -0.25f) + " (expect /+0.25 / /-1.25 7.25 /-0.25)");
+        java.util.ArrayList<Doc.Ev> l = new java.util.ArrayList<>();
+        l.add(new Doc.Ev(0f, 1f, 0f, 10f, 1f));
+        l.add(new Doc.Ev(2f, 4f, 10f, 30f, 2f));                   // a gap of 1 before it
+        l.add(new Doc.Ev(4f, 4.5f, 30f, 25f, 1f));
+        l.add(new Doc.Ev(6f, 7f, 50f, 60f, 1f));                   // outside the moved range: untouched
+        Doc.Ev mid = l.get(1);
+        Doc.reorderEvents(l, 0, 2);
+        StringBuilder b = new StringBuilder();
+        for (Doc.Ev ev : l) b.append(Im.fmt(ev.start)).append('-').append(Im.fmt(ev.end)).append(':')
+            .append(Im.fmt(ev.from)).append('>').append(Im.fmt(ev.to)).append(' ');
+        log("reorder units: " + b + "mid exp " + Im.fmt(mid.exp)
+            + " (expect 0-2:0>20 3-3.5:20>15 3.5-4.5:15>25 6-7:50>60 mid exp 2)");
     }
 
     /**
@@ -507,7 +1425,7 @@ final class AutoTest {
         Doc d = e.s.doc;
         float p = 4f;                                               // the playhead in the shots
         e.s.mark();
-        int[] lanes = {-3, -1, 2};
+        float[] lanes = {-600f, -120f, 360f};
         for (int k = 0; k < lanes.length; k++) {
             Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, lanes[k], p + 0.5f + 0.5f * k);
             n.approach(Note.DEFAULT_APPROACH_BEATS, Doc.SPAWN, 1f);
@@ -523,13 +1441,13 @@ final class AutoTest {
         Doc.DVeil a = new Doc.DVeil();
         a.polygon = true;
         a.points = Inspector.ring(6, 220f);
-        a.x = 640f;
+        a.x = -320f;
         a.y = 640f;
         a.start = 0f;
         a.end = 16f;
         Doc.DVeil b = new Doc.DVeil();
         b.radius = 180f;
-        b.x = 1320f;
+        b.x = 360f;
         b.y = 520f;
         b.rotEv.add(new Doc.Ev(0f, 16f, 0f, 90f, 1f));
         Doc.DDist w = new Doc.DDist();
@@ -628,17 +1546,17 @@ final class AutoTest {
         Doc.DVeil v = e.s.doc.veils.isEmpty() ? null : e.s.doc.veils.get(e.s.doc.veils.size() - 1);
         log("veil tool: tool " + e.tool + ", tab " + e.insp.tab + ", veils +" + (e.s.doc.veils.size() - veilsBefore)
             + ", at " + (v == null ? "-" : Math.round(v.x) + "," + Math.round(v.y)) + ", 8 beats "
-            + (v != null && v.end - v.start == 8f) + " (expect 9, 3, +1, ~200,1000, true)");
+            + (v != null && v.end - v.start == 8f) + " (expect 9, 3, +1, ~-760,1000, true)");
     }
 
     /** 假键 and 半径等比 (game 7.167 / 7.168, Kelvin 2026-11-02): kept through the v5 save; a fake is not counted. */
     private void fakeRigid(EditorScreen e) {
         Doc d = e.s.doc;
-        int lane = d.lanes.get(0).id;
+        float lane = -840f;  // the old lane −4
         Doc.DNote f = new Doc.DNote(NoteType.TAP, Line.LOWER, lane, 64f);
         f.fake = true;
         f.orbit = true;
-        f.orbitX = 960f;
+        f.orbitX = 0f;
         f.orbitY = 600f;
         f.orbitRadius = 200f;
         f.orbitRigid = true;
@@ -673,9 +1591,10 @@ final class AutoTest {
     }
 
     /**
-     * 不跟判定线 (Kelvin 2026-11-03): on a copy of the chart with both lines shaking (one eased), a default-fall sky
-     * key and an eased ground hold keep their place on screen from 99.5 to 101 and are unchanged outside it, as the
-     * game's loader reads the saved file (within half a reference unit: eased parts are cut into short lines).
+     * 不跟判定线 (Kelvin 2026-11-03): on a copy of the chart with both lines shaking (one eased) and 叠加层 on both
+     * (overlapping, one eased, one held across the range start), a default-fall sky key and an eased ground hold keep
+     * their place on screen from 99.5 to 101 and are unchanged outside it, as the game's loader reads the saved file
+     * (within half a reference unit: eased parts are cut into short lines).
      */
     private void holdStill(EditorScreen e) {
         try {
@@ -685,7 +1604,13 @@ final class AutoTest {
             d.upperEv.add(new Doc.Ev(100f, 100.5f, d.upper, d.upper + 30f, 1f));
             d.upperEv.add(new Doc.Ev(100.5f, 101f, d.upper + 30f, d.upper - 20f, 2f));
             d.lowerEv.add(new Doc.Ev(99.75f, 100.75f, d.lower, d.lower + 40f, 1.5f));
-            int lane = d.lanes.get(0).id;
+            d.upperLay.clear();
+            d.lowerLay.clear();
+            d.upperLay.add(new Doc.Ev(99.75f, 100.25f, 0f, 25f, 1f));
+            d.upperLay.add(new Doc.Ev(100f, 100.9f, -15f, 10f, 2f));
+            d.lowerLay.add(new Doc.Ev(99.4f, 99.6f, 12f, 12f, 1f));
+            d.lowerLay.add(new Doc.Ev(100.2f, 100.6f, 0f, -30f, 1f));
+            float lane = -840f;  // the old lane −4
             Doc.DNote sky = new Doc.DNote(NoteType.TAP, Line.UPPER, lane, 101.37f);
             Doc.DNote hold = new Doc.DNote(NoteType.HOLD, Line.LOWER, lane, 101.29f);
             hold.duration = 0.5f;
@@ -733,7 +1658,7 @@ final class AutoTest {
 
     private void tideMines(EditorScreen e) {
         Doc d = e.s.doc;
-        int lane = d.lanes.get(0).id;
+        float lane = -840f;  // the old lane −4
         Doc.DNote a = new Doc.DNote(NoteType.TIDE_MINE, Line.LOWER, lane, 60f);
         a.waveSpeed = 0.5f;
         Doc.DNote b = new Doc.DNote(NoteType.TIDE_MINE, Line.LOWER, lane, 62f);
@@ -811,11 +1736,11 @@ final class AutoTest {
     private void veilDragged(EditorScreen e) {
         Doc.DVeil v = e.s.doc.veilByUid(polyUid);
         log("veil drag: selected " + (e.s.veilSel == polyUid) + ", centre " + Doc.num(v.x) + ", " + Doc.num(v.y)
-            + " (expect true, 820, 730)");
+            + " (expect true, -140, 730)");
         e.undo();
         v = e.s.doc.veilByUid(polyUid);
         log("veil drag undone: centre " + (v != null ? Doc.num(v.x) + ", " + Doc.num(v.y) : "-")
-            + " (expect 640, 640)");
+            + " (expect -320, 640)");
     }
 
     private Library.Song newSong;
@@ -847,14 +1772,15 @@ final class AutoTest {
             try {
                 if (d.exists()) {
                     Chart ch = ChartMapper.read(d.file, null, null);
-                    c = ch.chartConstant() + " at " + Doc.num(ch.bpm());
+                    c = ch.chartConstant() + " at " + Doc.num(ch.bpm()) + ", " + ch.fixedLanesAt(0f) + " lanes";
                 }
             } catch (Exception ex) {
                 c = ex.toString();
             }
             r.append(", ").append(d.d.label()).append(' ').append(c);
         }
-        log(r + " (expect Surface, Surface 1 at 120, Shallow 2 at 120, Deep 3 at 120, Abyss -)");
+        log(r + " (expect Surface, Surface 1 at 120, 6 lanes, Shallow 2 at 120, 6 lanes, Deep 3 at 120, 6 lanes,"
+            + " Abyss -)");
     }
 
     /** Saving one difficulty writes its tempo into the song's other difficulty files (Kelvin 16:03). */
@@ -863,6 +1789,20 @@ final class AutoTest {
 
     private JacketCrop crop() {
         return app.view() instanceof LibraryScreen ? ((LibraryScreen) app.view()).crop : null;
+    }
+
+    /** The audio row's y, and the middle of the tablet's touch bar under the preview. */
+    private static final int AUDIO_Y = Math.round(EditorScreen.R_AUDIO + 12f);
+    private static final float TOUCH_BAR_Y = EditorScreen.PY + EditorScreen.PH + 30f;
+
+    /** @return screen y of reference y {@code ref} counted down from the preview's top edge */
+    private static int py(float ref) {
+        return Math.round(EditorScreen.PY + ref * EditorScreen.K);
+    }
+
+    /** @return {@code ref} reference units in screen pixels */
+    private static int px(float ref) {
+        return Math.round(ref * EditorScreen.K);
     }
 
     private void press(float x, float y) {
@@ -1147,13 +2087,13 @@ final class AutoTest {
         }
         if (pick != null) {
             e.s.select(pick, false);
-            log("selected " + pick.nameZh() + " lane " + pick.lane + " beat " + pick.judgement);
+            log("selected " + pick.nameZh() + " x " + pick.x + " beat " + pick.judgement);
         } else log("no note near beat " + e.beat);
     }
 
     /** Motion over beats 24–26 but judged at 29: shown early, judged unseen (2026-10-13 rule). */
     private void motionBeforeJudgement(EditorScreen e) {
-        Doc.DNote x = new Doc.DNote(NoteType.TAP, Line.LOWER, -1, 29f);
+        Doc.DNote x = new Doc.DNote(NoteType.TAP, Line.LOWER, -120f, 29f);
         x.move.add(new Doc.Ev(24f, 26f, Doc.SPAWN, 0f, 1f));
         e.s.mark();
         e.s.doc.notes.add(x);
@@ -1166,12 +2106,12 @@ final class AutoTest {
         e.undo();
     }
 
-    /** A v1 chart opens as unlimited lanes with ±1..±5 declared (their old window squeeze as width events). */
+    /** An old chart opens without lanes: every key keeps its place as x (lane moves as x events). */
     private void lanesAfterOpen(EditorScreen e) {
         Doc d = e.s.doc;
         int withEv = 0, rel = 0, all = 0, falls = 0;
-        for (Doc.DLane l : d.lanes) if (!l.widthEv.isEmpty()) withEv++;
         for (Doc.DNote n : d.notes) {
+            if (!n.xEv.isEmpty()) withEv++;
             for (Doc.Ev v : n.move) if (n.defaultFall(v)) falls++;
             for (java.util.List<Doc.Ev> list : java.util.Arrays.asList(n.move, n.rot, n.alpha, n.heightEv)) {
                 for (Doc.Ev v : list) {
@@ -1180,13 +2120,8 @@ final class AutoTest {
                 }
             }
         }
-        LaneLayout lay = e.pv.engine().layout();
-        int shown = 0;
-        for (int i = 0; i < lay.count(); i++) if (lay.active(i)) shown++;
-        log("opened: laneCount " + d.laneCount + ", declared lanes " + d.lanes.size() + " (" + withEv
-            + " with width events), layout " + lay.count() + " lanes, " + shown + " shown at beat " + e.beat
-            + ", tiled " + lay.tiled() + "; note events " + all + ", relative " + rel + " (expect the " + falls
-            + " default falls)");
+        log("opened: " + d.notes.size() + " notes, " + withEv + " with x events; note events " + all + ", relative "
+            + rel + " (expect the " + falls + " default falls)");
         StringBuilder sc = new StringBuilder();
         for (Doc.Ev v : d.laneScaleEv) {
             sc.append(' ').append(v.start).append('-').append(v.end).append(' ').append(v.from)
@@ -1198,7 +2133,7 @@ final class AutoTest {
 
     /** Moving a judgement: a relative event follows, an absolute one stays (kept for the save check). */
     private void relAndAbs(EditorScreen e) {
-        Doc.DNote x = new Doc.DNote(NoteType.TAP, Line.LOWER, 3, 30f);
+        Doc.DNote x = new Doc.DNote(NoteType.TAP, Line.LOWER, 600f, 30f);
         x.move.add(new Doc.Ev(24f, 26f, Doc.SPAWN, 0f, 1f));
         Doc.Ev r = new Doc.Ev(28f, 30f, 0f, 30f, 1f);
         r.rel = true;
@@ -1211,7 +2146,7 @@ final class AutoTest {
         while (taken) {
             taken = false;
             for (Doc.DNote o : e.s.doc.notes) {
-                if (o.type == NoteType.TAP && o.line == Line.LOWER && o.lane == 2
+                if (o.type == NoteType.TAP && o.line == Line.LOWER && Math.abs(o.x - 360f) < 1f
                     && Math.abs(o.judgement - yb) < 1e-3f) {
                     taken = true;
                     yb += 0.125f;
@@ -1219,7 +2154,7 @@ final class AutoTest {
                 }
             }
         }
-        Doc.DNote y = new Doc.DNote(NoteType.TAP, Line.LOWER, 2, yb);
+        Doc.DNote y = new Doc.DNote(NoteType.TAP, Line.LOWER, 360f, yb);
         y.move.add(new Doc.Ev(yb - 2f, yb, Doc.SPAWN, 0f, 1f));   // a default fall made absolute: saved "rel": false
         e.s.doc.notes.add(y);
         e.s.changed(false);
@@ -1246,7 +2181,7 @@ final class AutoTest {
 
     /** A LANE MINE whose red column grows after it lands: the bottom stays on the line. */
     private void laneMine(EditorScreen e) {
-        Doc.DNote m = new Doc.DNote(NoteType.MINE, Line.LOWER, 2, 40.5f);
+        Doc.DNote m = new Doc.DNote(NoteType.MINE, Line.LOWER, 360f, 40.5f);
         m.duration = 2f;
         m.height = 300f;
         m.approach(2f, Doc.SPAWN, 1f);
@@ -1264,8 +2199,8 @@ final class AutoTest {
         Checks c = new Checks();
         c.update(e.s);
         int problems = c.problems;
-        Doc.DNote mi = new Doc.DNote(NoteType.MINE, Line.LOWER, 2, 41.25f),
-            tp = new Doc.DNote(NoteType.TAP, Line.LOWER, 2, 41.75f);
+        Doc.DNote mi = new Doc.DNote(NoteType.MINE, Line.LOWER, 360f, 41.25f),
+            tp = new Doc.DNote(NoteType.TAP, Line.LOWER, 360f, 41.75f);
         mi.approach(2f, Doc.SPAWN, 1f);
         tp.approach(2f, Doc.SPAWN, 1f);
         e.s.doc.notes.add(mi);
@@ -1276,14 +2211,14 @@ final class AutoTest {
             + " (expect none, unchanged)");
         e.s.doc.notes.add(tp);
         e.s.changed(false);
-        log("tap in the block: " + checkFor(tp.uid) + " (expect 轨道水雷封锁冲突)");
+        log("tap in the block: " + checkFor(tp.uid) + " (expect 长水雷封锁冲突)");
         e.s.doc.notes.remove(tp);
         e.s.doc.notes.remove(mi);
         e.s.changed(false);
         // stacked mines and a mine on a tap's spot all load (game fdc9922, Kelvin 10-22: 「地雷的限制不用那么多」)
-        Doc.DNote m1 = new Doc.DNote(NoteType.MINE, Line.LOWER, 3, 44.03125f),
-            m2 = new Doc.DNote(NoteType.MINE, Line.LOWER, 3, 44.03125f);
-        Doc.DNote t3 = new Doc.DNote(NoteType.TAP, Line.LOWER, 3, 44.03125f);
+        Doc.DNote m1 = new Doc.DNote(NoteType.MINE, Line.LOWER, 600f, 44.03125f),
+            m2 = new Doc.DNote(NoteType.MINE, Line.LOWER, 600f, 44.03125f);
+        Doc.DNote t3 = new Doc.DNote(NoteType.TAP, Line.LOWER, 600f, 44.03125f);
         for (Doc.DNote x : new Doc.DNote[]{m1, m2, t3}) {
             x.approach(2f, Doc.SPAWN, 1f);
             e.s.doc.notes.add(x);
@@ -1297,8 +2232,8 @@ final class AutoTest {
         e.s.doc.notes.remove(t3);
         e.s.changed(false);
         // two taps on one lane and beat both load and get an INFO (game 7.166, Kelvin 2026-11-02)
-        Doc.DNote s1 = new Doc.DNote(NoteType.TAP, Line.LOWER, 3, 44.03125f),
-            s2 = new Doc.DNote(NoteType.TAP, Line.LOWER, 3, 44.03125f);
+        Doc.DNote s1 = new Doc.DNote(NoteType.TAP, Line.LOWER, 600f, 44.03125f),
+            s2 = new Doc.DNote(NoteType.TAP, Line.LOWER, 600f, 44.03125f);
         for (Doc.DNote x : new Doc.DNote[]{s1, s2}) {
             x.approach(2f, Doc.SPAWN, 1f);
             e.s.doc.notes.add(x);
@@ -1306,7 +2241,7 @@ final class AutoTest {
         e.s.changed(false);
         log("stacked taps: built " + (e.s.note(s1) != null) + ", " + (e.s.note(s2) != null) + ", "
             + (e.s.note(s1) != e.s.note(s2)) + ", check " + checkFor(s2.uid)
-            + " (expect true, true, true, check 同轨同拍叠着的音符 1 组（每个要一根手指）)");
+            + " (expect true, true, true, check 同一位置同一拍叠着的音符 1 组（每个要一根手指）)");
         e.s.doc.notes.remove(s1);
         e.s.doc.notes.remove(s2);
         e.s.changed(false);
@@ -1317,39 +2252,6 @@ final class AutoTest {
         c.update(ed().s);
         for (Checks.Item i : c.items) if (i.uids.contains(uid)) return i.text;
         return "none";
-    }
-
-    /**
-     * 整理轨道 on marsh mally (all 10 lanes have notes): pan 300 puts −5 on screen, so a zero-width
-     * −6 must stay (as a default lane it would show), while an unused +6 and a 100-wide −9 off
-     * screen go.
-     */
-    private void tidySetup(EditorScreen e) {
-        java.util.TreeSet<Integer> kept = new java.util.TreeSet<>();
-        log("tidy before: " + Inspector.lanesToTidy(e.s.doc, kept) + " kept " + kept + " (expect [] kept [])");
-        e.s.mark();
-        Doc d = e.s.doc;
-        d.cameraFrame = 300f;
-        d.ensureLane(-6);
-        d.lane(-6).width = 0f;
-        d.ensureLane(6);
-        d.ensureLane(-9);
-        d.lane(-9).width = 100f;
-        e.s.changed(false);
-        kept.clear();
-        log("tidy: " + Inspector.lanesToTidy(d, kept) + " kept " + kept + " (expect [-9, 6] kept [-6])");
-        lanesBefore = d.lanes.size();
-        e.insp.tidyLanes(e.s, d);
-    }
-
-    private void tidyCheck(EditorScreen e) {
-        log("tidied: lanes " + (e.s.doc.lanes.size() - lanesBefore) + " (expect -2), -6 still declared "
-            + (e.s.doc.lane(-6) != null));
-        e.undo();
-        log("undo tidy: lanes " + (e.s.doc.lanes.size() - lanesBefore) + " (expect 0)");
-        e.undo();
-        log("undo setup: lanes " + e.s.doc.lanes.size() + " (expect 10), camera " + e.s.doc.cameraFrame
-            + " (expect 0.0)");
     }
 
     /** Two trail segments and two glitch segments on the selected note; the save at the end checks they survive. */
@@ -1454,146 +2356,12 @@ final class AutoTest {
     }
 
     /**
-     * 插入0号轨 (Kelvin 10-15): lane 0 between −1 and +1 from the playhead; save → reload keeps it; a note before it is
-     * flagged.
-     */
-    private void laneInsert(EditorScreen e) {
-        Doc d = e.s.doc;
-        e.insp.tab = Inspector.FIELD;
-        java.util.Arrays.fill(e.insp.scroll, 0f);
-        e.s.lanePick.clear();
-        float b0 = e.snap(e.beat);
-        e.insp.insertLane(e.s, d, -1, 1);
-        Doc.DLane l = d.lane(0);
-        if (l == null || l.insert == null) {
-            log("插入0号轨: no lane 0");
-            return;
-        }
-        LaneLayout lay = new LaneLayout(e.s.chart);
-        lay.update(l.insert.start - 0.5f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-        float w0 = lay.width(lay.indexOf(0)), z0 = lay.squeeze();
-        lay.update(l.insert.end + 1f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-        log("插入0号轨: insert " + l.insert.start + ".." + l.insert.end + " (expect " + b0 + ".." + (b0 + 1f) + "), width "
-            + l.width + "; before it lane 0 " + w0 + ", squeeze " + z0 + "; after it lane 0 "
-            + lay.width(lay.indexOf(0)) + ", lane +1 " + lay.width(lay.indexOf(1)) + ", squeeze " + lay.squeeze()
-            + " (expect 0, 1; equal, < 1)");
-        try {
-            FileHandle f = Gdx.files.absolute(dir).child("laneins_roundtrip.json");
-            f.writeString(d.toJson(), false, "UTF-8");
-            Doc back = Doc.fromChart(ChartMapper.read(f, null, null));
-            Doc.readRelFlags(back, f);
-            log("lane insert round trip: identical json " + d.toJson().equals(back.toJson()) + ", lane 0 inserted "
-                + (back.lane(0) != null && back.lane(0).insert != null) + " (expect true, true)");
-        } catch (Exception ex) {
-            log("lane insert round trip failed: " + ex);
-        }
-        Doc.DNote early = new Doc.DNote(NoteType.TAP, Line.LOWER, 0, l.insert.start - 1f);
-        early.approach(2f, Doc.SPAWN, 1f);
-        d.notes.add(early);
-        e.s.changed(false);
-        log("note before the insertion: " + checkFor(early.uid) + " (expect 轨道插入前)");
-        d.notes.remove(early);
-        e.s.changed(false);
-        e.seekBeat(l.insert.end + 1f);
-    }
-
-    /**
-     * 删除轨道 (Kelvin 10-17): lane 0, inserted earlier, deleted from beat 16 within 1 beat gives all its room back (lane
-     * +1 as wide as in the same chart without lane 0); the deletion survives save → reload; a note after it is flagged.
-     */
-    private void laneDelete(EditorScreen e) {
-        Doc d = e.s.doc;
-        e.insp.tab = Inspector.FIELD;
-        e.s.lanePick.clear();
-        if (d.lane(0) == null) e.insp.insertLane(e.s, d, -1, 1);
-        Doc.DLane l = d.lane(0);
-        e.s.laneSel = 0;
-        e.insp.deleteLane(e.s, l, 16f);
-        float without = Float.NaN;
-        Doc x = d.copy();
-        x.lanes.remove(x.lane(0));
-        x.notes.removeIf(n -> n.inLane() && n.lane == 0);
-        try {
-            LaneLayout w = new LaneLayout(ChartMapper.read(new java.io.ByteArrayInputStream(
-                x.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8)), "editor"));
-            w.update(18f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-            without = w.width(w.indexOf(1));
-        } catch (Exception ex) {
-            log("chart without lane 0 failed: " + ex);
-        }
-        LaneLayout lay = new LaneLayout(e.s.chart);
-        lay.update(16.5f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-        float half = lay.width(lay.indexOf(0));
-        lay.update(18f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-        log("删除轨道: delete " + l.delete.start + ".." + l.delete.end + " from " + l.delete.from + " to " + l.delete.to
-            + " (expect 16..17, lane 0's width, 0); halfway lane 0 " + half + "; after it lane 0 "
-            + lay.width(lay.indexOf(0)) + ", lane +1 " + lay.width(lay.indexOf(1)) + " (without lane 0 at all "
-            + without + ", expect 0 and equal)");
-        try {
-            String json = d.toJson();
-            FileHandle f = Gdx.files.absolute(dir).child("lanedel_roundtrip.json");
-            f.writeString(json, false, "UTF-8");
-            Doc back = Doc.fromChart(ChartMapper.read(f, null, null));
-            Doc.readRelFlags(back, f);
-            log("lane delete round trip: identical json " + json.equals(back.toJson()) + ", written "
-                + json.contains("\"delete\": { \"startTime\": 16, \"endTime\": 17, ") + " (expect true, true)");
-        } catch (Exception ex) {
-            log("lane delete round trip failed: " + ex);
-        }
-        Doc.DNote late = new Doc.DNote(NoteType.TAP, Line.LOWER, 0, 18f);
-        late.approach(2f, Doc.SPAWN, 1f);
-        d.notes.add(late);
-        e.s.changed(false);
-        log("note after the deletion: " + checkFor(late.uid) + " (expect 轨道删除后)");
-        d.notes.remove(late);
-        e.s.changed(false);
-        e.insp.scroll[Inspector.FIELD] = 760f;
-        e.seekBeat(16.5f);
-    }
-
-    /**
-     * Inserting between +2 and +3 moves +3 and further out (with notes) one id out; removing it moves them back; undo /
-     * redo.
-     */
-    private void laneBetween(EditorScreen e) {
-        Doc d = e.s.doc;
-        Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, 3, 12f);
-        n.approach(2f, Doc.SPAWN, 1f);
-        e.s.mark();
-        d.notes.add(n);
-        e.s.changed(false);
-        int far = 0;
-        for (Doc.DLane l : d.lanes) far = Math.max(far, l.id);
-        e.s.lanePick.clear();
-        e.s.lanePick.add(2);
-        e.s.lanePick.add(3);
-        log("+2 and +3 adjacent " + d.adjacent(2, 3) + ", -1 and +1 adjacent " + d.adjacent(-1, 1)
-            + " (expect true, false: lane 0 is there)");
-        e.insp.insertLane(e.s, d, 2, 3);
-        int far2 = 0;
-        for (Doc.DLane l : d.lanes) far2 = Math.max(far2, l.id);
-        log("between +2 and +3: new lane " + e.s.laneSel + " inserted "
-            + (d.lane(3) != null && d.lane(3).insert != null) + ", the note now on " + n.lane + ", outermost " + far
-            + " -> " + far2 + " (expect 3, true, 4, +1)");
-        e.insp.removeLane(e.s, d, 3);
-        log("removed: the note back on " + n.lane + ", lane 3 inserted "
-            + (d.lane(3) != null && d.lane(3).insert != null) + " (expect 3, false)");
-        e.s.undo();
-        d = e.s.doc;
-        Doc.DNote u = d.byUid(n.uid);
-        log("undo: lane 3 inserted " + (d.lane(3) != null && d.lane(3).insert != null) + ", the note on "
-            + (u == null ? "?" : u.lane) + " (expect true, 4)");
-        e.s.lanePick.clear();
-        e.s.laneSel = 3;
-    }
-
-    /**
      * 旋转中心 (Kelvin 10-16): a turned note's pivot reaches the preview chart and survives save → reload; only a
      * non-origin pivot is written.
      */
     private void pivotTest(EditorScreen e) {
         Doc d = e.s.doc;
-        Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, -2, 14f);
+        Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, -360f, 14f);
         n.approach(2f, Doc.SPAWN, 1f);
         n.rot.add(new Doc.Ev(12f, 14f, 0f, 60f, 1f));
         n.pivotY = -20f;
@@ -1622,7 +2390,7 @@ final class AutoTest {
     }
 
     /**
-     * 左右镜像 / 上下镜像 (Kelvin 2026-10-22): sky ↔ ground keeps lane and beat and turns the other way about the pivot
+     * 左右镜像 / 上下镜像 (Kelvin 2026-10-22): sky ↔ ground keeps x and beat and turns the other way about the pivot
      * mirrored in x, so the game puts the head exactly mirrored (its own pivot shift); each mirror twice is no change.
      */
     private void mirrorTest(EditorScreen e, Doc.DNote n) {
@@ -1633,18 +2401,18 @@ final class AutoTest {
         float a = n.rot.get(0).to;
         float x1 = NoteShapes.pivotShiftX(0.5f, 40f, 40f, a + 180f, true, n.pivotX, n.pivotY);
         float y1 = NoteShapes.pivotShiftY(0.5f, 40f, 40f, a + 180f, true, n.pivotX, n.pivotY);
-        log("mirror up-down: " + n.line + " lane " + n.lane + ", angle " + a + ", pivot " + n.pivotX + ", " + n.pivotY
+        log("mirror up-down: " + n.line + " x " + n.x + ", angle " + a + ", pivot " + n.pivotX + ", " + n.pivotY
             + ", head x same " + (Math.abs(x1 - x0) < 1e-3f) + ", y mirrored " + (Math.abs(y1 + y0) < 1e-3f)
-            + " (expect UPPER lane -2, -60.0, -12.0, -20.0, true, true)");
-        int lane = n.lane;
+            + " (expect UPPER x -360.0, -60.0, -12.0, -20.0, true, true)");
+        float x = n.x;
         e.mirror();
-        log("mirror left-right: lane " + lane + " -> " + n.lane + ", angle " + n.rot.get(0).to + ", pivot x " + n.pivotX
-            + " (expect the mirrored lane, 60.0, 12.0)");
+        log("mirror left-right: x " + x + " -> " + n.x + ", angle " + n.rot.get(0).to + ", pivot x " + n.pivotX
+            + " (expect 360.0, 60.0, 12.0)");
         e.mirror();
         e.mirrorUpDown();
         n.pivotX = 0f;
-        log("each twice: " + n.line + " lane " + n.lane + ", angle " + n.rot.get(0).to
-            + " (expect LOWER lane -2, 60.0)");
+        log("each twice: " + n.line + " x " + n.x + ", angle " + n.rot.get(0).to
+            + " (expect LOWER x -360.0, 60.0)");
     }
 
     /**
@@ -1664,10 +2432,10 @@ final class AutoTest {
             a.upper = o[1];
             a.lower = o[2];
             a.notes.clear();
-            Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, 1, 4f);
+            Doc.DNote n = new Doc.DNote(NoteType.TAP, Line.LOWER, 120f, 4f);
             n.approach(2f, o[3], 1f);
             n.pivotY = o[4];
-            Doc.DNote h = new Doc.DNote(NoteType.HOLD, Line.UPPER, -1, 6f);
+            Doc.DNote h = new Doc.DNote(NoteType.HOLD, Line.UPPER, -120f, 6f);
             h.approach(2f, o[3], 1f);
             h.duration = 2f;
             h.height = o[3];
@@ -1707,7 +2475,7 @@ final class AutoTest {
     private void segmentsBuilt(EditorScreen e, Doc.DNote n) {
         e.s.rebuild();
         for (Note g : e.s.chart.notes()) {
-            if (g.judgement() != n.judgement || g.laneId() != n.lane || g.line() != n.line) continue;
+            if (g.judgement() != n.judgement || Math.abs(g.x() - n.x) > 0.01f || g.line() != n.line) continue;
             log("preview note: " + g.trails().size() + " trail segments, " + g.glitches().size()
                 + " glitch segments, first glitch from " + g.glitches().get(0).from() + " intensity at its middle "
                 + g.glitches().get(0).intensityAt(n.judgement - 1.5f) + " (expect 2, 2, "
@@ -1735,12 +2503,10 @@ final class AutoTest {
             StringBuilder m = new StringBuilder();
             for (Doc.DNote n : d.notes) {
                 for (Doc.Ev v : n.move) {
-                    m.append(' ').append(n.lane).append('@').append(n.judgement).append(v.rel ? " rel" : " abs");
+                    m.append(' ').append(n.x).append('@').append(n.judgement).append(v.rel ? " rel" : " abs");
                 }
             }
             log("Aleph-0 Surface in the editor, movement:" + m);
-            java.util.TreeSet<Integer> kept = new java.util.TreeSet<>();
-            log("Aleph-0 Surface 整理轨道: " + Inspector.lanesToTidy(d, kept) + " kept " + kept);
         } catch (Exception ex) {
             log("Aleph-0 Surface failed: " + ex);
         }
@@ -1752,22 +2518,25 @@ final class AutoTest {
         Doc.DNote tide = null;
         for (Doc.DNote n : d.notes) if (n.type == NoteType.UNIVERSAL && tide == null) tide = n;
         if (tide == null) {
-            tide = new Doc.DNote(NoteType.UNIVERSAL, Line.LOWER, 0, 8f);
+            tide = new Doc.DNote(NoteType.UNIVERSAL, Line.LOWER, 0f, 8f);
             tide.move.add(new Doc.Ev(6f, 8f, Doc.SPAWN, 0f, 1f));
             d.notes.add(tide);
         }
         tide.waveSpeed = 0.5f;
         Doc.DNote key = null;
         for (Doc.DNote n : d.notes) if (n.inLane() && key == null) key = n;
+        float kx = 0f, kj = Float.NaN;
         if (key != null) {
-            key.offsetX = -30f;
-            Doc.Ev slide = new Doc.Ev(key.judgement - 2f, key.judgement, -30f, 30f, 1f);
+            key.x -= 30f;
+            kx = key.x;
+            kj = key.judgement;
+            Doc.Ev slide = new Doc.Ev(kj - 2f, kj, kx, kx + 60f, 1f);
             slide.rel = true;
-            key.offEv.add(slide);
+            key.xEv.add(slide);
             key.orbit = true;
-            key.orbitX = 800f;
+            key.orbitX = -160f;                                // 800 in the 1920-wide frame
             key.orbitY = 500f;
-            Doc.Ev move = new Doc.Ev(key.judgement - 2f, key.judgement - 1f, 800f, 900f, 1f);
+            Doc.Ev move = new Doc.Ev(key.judgement - 2f, key.judgement - 1f, -160f, -60f, 1f);
             move.rel = true;
             key.orbXEv.add(move);
             key.orbitRadius = -40f;
@@ -1779,12 +2548,11 @@ final class AutoTest {
         byte[] v4 = d.toJson().getBytes("UTF-8");
         Chart preview = ChartMapper.read(new java.io.ByteArrayInputStream(v4), name);
         float inPreview = 0f;
-        float offPreview = 0f, offBack = 0f, slidePreview = Float.NaN;
+        float slidePreview = Float.NaN;
         String slideBack = "none", orbitPreview = "none", orbitBack = "none";
         for (Note n : preview.notes()) {
             inPreview = Math.max(inPreview, n.waveSpeed());
-            offPreview = Math.min(offPreview, n.offsetX());
-            if (!n.offsetXEvents().isEmpty()) slidePreview = n.offsetXAt(n.judgement() - 1f);
+            if (!n.xEvents().isEmpty() && Math.abs(n.judgement() - kj) < 1e-4f) slidePreview = n.xAt(kj - 1f);
             if (n.orbit() != null) {
                 orbitPreview = n.orbit().xAt(n.judgement()) + ", " + n.orbit().yAt(n.judgement()) + ", radius "
                     + n.orbit().radiusAt(n.judgement()) + ", angle " + n.orbit().angleAt(n.judgement()) + ", conflict "
@@ -1803,8 +2571,9 @@ final class AutoTest {
         float inBack = 0f;
         for (Doc.DNote n : back.notes) {
             inBack = Math.max(inBack, n.waveSpeed);
-            offBack = Math.min(offBack, n.offsetX);
-            for (Doc.Ev v : n.offEv) slideBack = Im.fmt(v.from) + " to " + Im.fmt(v.to) + (v.rel ? " rel" : " abs");
+            if (Math.abs(n.judgement - kj) < 1e-4f) {
+                for (Doc.Ev v : n.xEv) slideBack = Im.fmt(v.from) + " to " + Im.fmt(v.to) + (v.rel ? " rel" : " abs");
+            }
             for (Doc.Ev v : n.orbXEv) {
                 orbitBack = (n.orbit ? "orbit " : "no orbit ") + Im.fmt(n.orbitX) + ", " + Im.fmt(n.orbitY) + ", x "
                     + Im.fmt(v.from) + " to " + Im.fmt(v.to) + (v.rel ? " rel" : " abs") + ", radius "
@@ -1814,12 +2583,10 @@ final class AutoTest {
         }
         log("wave speed: preview " + inPreview + ", v5 " + r.json.matches("(?s).*\"waveSpeed\"\\s*:\\s*0\\.5.*")
             + ", read back " + inBack + ", problems " + r.problems + " (expect 0.5, true, 0.5, [])");
-        log("offset x: preview " + offPreview + ", v5 " + r.json.matches("(?s).*\"offsetX\"\\s*:\\s*-30.*")
-            + ", read back " + offBack + " (expect -30.0, true, -30.0)");
-        log("offset x events: preview halfway " + slidePreview + ", read back " + slideBack
-            + " (expect 0.0, -30 to 30 rel)");
+        log("x events: preview halfway " + slidePreview + ", read back " + slideBack + " (expect " + (kx + 30f) + ", "
+            + Im.fmt(kx) + " to " + Im.fmt(kx + 60f) + " rel)");
         log("orbit: preview at the judgement " + orbitPreview + ", read back " + orbitBack
-            + " (expect 900.0, 500.0, radius -40.0, angle 90.0, conflict 2, orbit 800, 500, x 800 to 900 rel,"
+            + " (expect 900.0, 500.0, radius -40.0, angle 90.0, conflict 2, orbit -160, 500, x -160 to -60 rel,"
             + " radius -40, angle 1 event rel, conflict 2)");
     }
 
@@ -1831,10 +2598,11 @@ final class AutoTest {
             String a = e.s.doc.toJson(), b = back.toJson();
             log("saved " + e.s.file.name() + ": " + e.s.doc.notes.size() + " notes, read back " + c.noteCount()
                 + " (format v" + c.sourceFormat() + "), identical json: " + a.equals(b));
-            // v5 (Kelvin 2026-10-27): the song values went to song.json, the editor's keys under "editor"
+            // v5 (Kelvin 2026-10-27), v6 without lanes (2026-11-05): the song values went to song.json, the editor's
+            // keys under "editor"
             String text = e.s.file.readString("UTF-8");
             org.kelvinizer.elements.SongInfo song = org.kelvinizer.elements.SongInfo.besides(e.s.file);
-            log("v5 file: format 5 " + text.matches("(?s)\\{\\s*\"format\"\\s*:\\s*5,.*") + ", no title "
+            log("v6 file: format 6 " + text.matches("(?s)\\{\\s*\"format\"\\s*:\\s*6,.*") + ", no title "
                 + !text.contains("\"title\"") + ", editor " + text.matches("(?s).*\"editor\"\\s*:\\s*\\{.*")
                 + ", song.json bpm "
                 + (song != null && song.bpm == e.s.doc.bpms.get(0).bpm) + " (expect true, true, true, true)");
@@ -1888,8 +2656,8 @@ final class AutoTest {
                 if (e != null && e.s.single() != null) log("tablet text box: 判定拍 " + Im.fmt(noteBeat) + " → "
                     + Im.fmt(e.s.single().judgement) + " (expect +0.25)");
                 break;
-            case 50: tap(72f + 138f + 248f + 28f, 559f); break;      // 多选
-            case 53: tap(102f, 559f); break;                          // 撤销
+            case 50: tap(EditorScreen.PX + 384f, TOUCH_BAR_Y); break;  // 多选
+            case 53: tap(EditorScreen.PX + 30f, TOUCH_BAR_Y); break;   // 撤销
             case 56:
                 if (e != null && e.s.single() != null) log("tablet 撤销: 判定拍 " + Im.fmt(e.s.single().judgement)
                     + " (expect " + Im.fmt(noteBeat) + ")");
@@ -1899,7 +2667,7 @@ final class AutoTest {
             case 59:
                 if (e != null) log("tablet zoom after +: " + Im.fmt((float) e.tlSpan) + " beats (expect 12.8)");
                 break;
-            case 62: tap(EditorScreen.TR - 38f, 559f); break;         // 统计
+            case 62: tap(EditorScreen.TR - 38f, TOUCH_BAR_Y); break;   // 统计
             case 65:
                 if (e != null) log("tablet stats open " + e.statsOpen + " (expect true)");
                 break;
@@ -1981,8 +2749,23 @@ final class AutoTest {
             case 245: shot("c17_veil_circle"); break;
             case 252: shot("c17_note_dist"); break;
             case 256: shot("c18_live"); break;
-            case 259:
-                shot("c19_curtain");
+            case 259: shot("c19_curtain"); break;
+            case 262: shot("c20_cards"); break;
+            case 265: shot("c21_drag"); break;
+            case 267: shot("c22_reorder"); break;
+            case 276: shot("c23_paste"); break;
+            case 284: shot("c24_slash"); break;
+            case 301: shot("c25_drag"); break;
+            case 305: shot("c26_layers"); break;
+            case 316: shot("c27_float"); break;
+            case 331: shot("c28_float_path"); break;
+            case 334: shot("c29_float_card"); break;
+            case 429: shot("c32_lanes"); break;
+            case 441: shot("c33_quick"); break;
+            case 449: shot("c33_quick_shake"); break;
+            case 451: shot("c34_stroke"); break;
+            case 458: shot("c35_bars"); break;
+            case 460:
                 Gdx.files.absolute(dir).child("autotest.log").writeString(log.toString(), false, "UTF-8");
                 Gdx.app.exit();
                 break;

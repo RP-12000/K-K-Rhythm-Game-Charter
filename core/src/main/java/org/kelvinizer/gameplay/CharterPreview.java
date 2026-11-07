@@ -3,6 +3,7 @@ package org.kelvinizer.gameplay;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import org.kelvinizer.elements.Chart;
+import org.kelvinizer.elements.Floating;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
@@ -128,6 +129,30 @@ public final class CharterPreview {
     }
 
     /**
+     * How many world units one chart unit of a floating note's size is in this frame (FloatSpace.scale), for the
+     * editor's ghost of a key not placed yet.
+     */
+    public static float floatScale(LaneLayout lay) {
+        return FloatSpace.scale(lay);
+    }
+
+    /**
+     * Where floating note {@code n} (悬浮键, CHART_FORMAT §11, game 7.185) is at {@code beat} in this frame's space, as
+     * {@code FloatSpace} places it: world x and y of its centre and its world radius in {@code out[0..2]}.
+     *
+     * @return false when it does not float or has no place then
+     */
+    public boolean floatAt(Note n, float beat, float[] out) {
+        Floating f = n.floating();
+        if (f == null) return false;
+        LaneLayout lay = engine.layout();
+        out[0] = lay.x(f.xAt(beat));
+        out[1] = Field.y(f.yAt(beat));
+        out[2] = 0.5f * f.sizeAt(beat) * FloatSpace.scale(lay);
+        return !Float.isNaN(out[0]) && !Float.isNaN(out[1]) && out[2] > 0f;
+    }
+
+    /**
      * Moves the preview to song time {@code ms} (judgement time). Going back restarts the
      * autoplay run silently and replays it up to {@code ms} in one step.
      *
@@ -196,6 +221,7 @@ public final class CharterPreview {
     }
 
     private void feed() {
+        if (ev.has(GameEvent.FLAG_FLOAT)) return; // floating notes draw their own effects
         Line line = ev.line;
         boolean universal = ev.has(GameEvent.FLAG_UNIVERSAL);
         if (ev.type == GameEvent.HIT) {
@@ -209,6 +235,10 @@ public final class CharterPreview {
 
     /** Live: {@code GameplayScreen.consumeEvents} for an autoplay run at High quality, without the sounds. */
     private void feedLive() {
+        if (ev.has(GameEvent.FLAG_FLOAT)) {
+            floatLive();
+            return;
+        }
         Line line = ev.line;
         float ly = line != null ? engine.lineY(line) : ev.y;
         boolean sky = line == Line.UPPER;
@@ -219,7 +249,7 @@ public final class CharterPreview {
                 if (!universal) fx.tap(x, ly, ev.judgement, 1f, sky); // TIDE: no point effect
                 hitFeedback(line, ly, x, universal);
                 if (universal) wash.hit(line, ev.judgement == Judgement.RESONANCE, runTime);
-                else if (line != null) field.pulseColumn(line, ev.lane); // autoplay's contact
+                else if (line != null) field.pulseColumn(line, ev.x, ev.width); // autoplay's contact
                 hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                 break;
             }
@@ -235,7 +265,7 @@ public final class CharterPreview {
                     hitFeedback(line, ly, ev.x, false);
                     hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                 }
-                if (line != null) field.pulseColumn(line, ev.lane);
+                if (line != null) field.pulseColumn(line, ev.x, ev.width);
                 break;
             }
             case GameEvent.HOLD_END: {
@@ -254,7 +284,7 @@ public final class CharterPreview {
                     if (tide) wash.complete(line, ev.judgement == Judgement.RESONANCE, runTime);
                 } else {
                     fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
-                    field.flash(line, ev.lane, false, runTime);
+                    field.flash(line, ev.x, ev.width, false, runTime);
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     if (tide && !engine.tideRunning(line)) wash.drain(line, runTime);
                 }
@@ -263,12 +293,12 @@ public final class CharterPreview {
             case GameEvent.LOST:
                 fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
                 if (universal) field.flashWindow(line, false, runTime);
-                else field.flash(line, ev.lane, false, runTime);
+                else field.flash(line, ev.x, ev.width, false, runTime);
                 hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                 break;
             case GameEvent.MINE:
                 feedback.mineShock(ev.touchX, ly, runTime);
-                field.flash(line, ev.lane, true, runTime);
+                field.flash(line, ev.x, ev.width, true, runTime);
                 hud.mineBreak();
                 hud.mineWord(ev.x, line, ly, runTime);
                 break;
@@ -276,6 +306,36 @@ public final class CharterPreview {
                 break;
         }
     }
+
+    /**
+     * Live: {@code GameplayScreen.floatEvent} without the sounds and the finger's contact ring: a floating note draws
+     * its own hit and miss effects ({@code FloatNotes}), so only the words just above it ({@code ev.x}/{@code ev.y}:
+     * its centre, {@code ev.width} its diameter; a touched mine's red LOST).
+     */
+    private void floatLive() {
+        float foot = ev.y + 0.5f * ev.width + FLOAT_WORD_GAP;
+        switch (ev.type) {
+            case GameEvent.HIT:
+            case GameEvent.HOLD_START:
+                if (!ev.has(GameEvent.FLAG_REGRAB)) hud.judgement(ev.judgement, ev.dtMs, ev.x, null, foot, runTime);
+                break;
+            case GameEvent.HOLD_END:
+                if (!ev.has(GameEvent.FLAG_COMPLETED)) hud.judgement(Judgement.LOST, 0f, ev.x, null, foot, runTime);
+                break;
+            case GameEvent.LOST:
+                hud.judgement(Judgement.LOST, 0f, ev.x, null, foot, runTime);
+                break;
+            case GameEvent.MINE:                                    // the mine bursts red where it is (FloatNotes)
+                hud.mineBreak();
+                hud.mineWord(ev.x, null, foot, runTime);
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Gap between a floating note and the judgement word above it, as {@code GameplayScreen} draws it. */
+    private static final float FLOAT_WORD_GAP = 14f;
 
     /** The hit ripple and EARLY / LATE chevron of a judged lane hit (a TIDE swells the tide wash instead). */
     private void hitFeedback(Line line, float ly, float x, boolean universal) {
@@ -410,7 +470,9 @@ public final class CharterPreview {
         return ms < 180f ? 1f - ms / 180f : 0f;
     }
 
-    /** Frees the HUD's fonts, the hit effects and the curtains' buffers (the rest uses the shared {@link Draw}). */
+    /**
+     * Frees the HUD's fonts, the hit effects and the curtains' buffers (the rest uses the shared {@link Draw}).
+     */
     public void dispose() {
         fx.dispose();
         curtains.dispose();

@@ -18,7 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 一次编辑：正在改的谱面、撤销/重做、选中的音符和轨道，以及保存（第一次覆盖前先备份）。
+ * 一次编辑：正在改的谱面、撤销/重做、选中的音符，以及保存（第一次覆盖前先备份）。
  * One editing session of one chart file: the document, undo / redo, the selection, the
  * {@link Chart} the preview plays (built by the game's own loader after every change) and saving,
  * with a backup before the file is first overwritten.
@@ -45,12 +45,6 @@ public final class Session {
     public int version;
     /** Selected notes by uid, in selection order. */
     public final LinkedHashSet<Integer> sel = new LinkedHashSet<>();
-    /** No lane selected ({@link #laneSel}); 0 is a lane id now (an inserted lane). */
-    public static final int NO_LANE = Integer.MIN_VALUE;
-    /** Selected lane id ({@link #NO_LANE} = none). */
-    public int laneSel = NO_LANE;
-    /** Lanes picked together (Ctrl / Shift on the lane chips) for a partial scale. */
-    public final java.util.TreeSet<Integer> lanePick = new java.util.TreeSet<>();
     /** The line new notes go to. */
     public Line placeLine = Line.LOWER;
     /** Selected veil by uid (0 = none). */
@@ -136,9 +130,13 @@ public final class Session {
         redo.clear();
     }
 
+    /** 同步链接 let go by the last changes (a copy changed by itself or its source gone), for a notice. */
+    int unlinked;
+
     /** Call after changing the doc; rebuilds the preview (at most every 60 ms while {@code dragging}). */
     public void changed(boolean dragging) {
         doc.reflow();
+        unlinked += doc.relink();
         dirty = true;
         version++;
         if (dragging && System.currentTimeMillis() - lastBuild < DRAG_BUILD_MS) buildPending = true;
@@ -171,11 +169,6 @@ public final class Session {
     private void afterHistory() {
         sel.removeIf(u -> doc.byUid(u) == null);
         if (doc.veilByUid(veilSel) == null) veilSel = 0;
-        // unlimited lanes: an undeclared lane is still a lane (default width)
-        if (doc.laneCount > 0) {
-            if (laneSel != NO_LANE && doc.lane(laneSel) == null) laneSel = NO_LANE;
-            lanePick.removeIf(id -> doc.lane(id) == null);
-        }
         dirty = true;
         version++;
         rebuild();
@@ -220,11 +213,14 @@ public final class Session {
         HashMap<String, ArrayDeque<Note>> byKey = new HashMap<>();
         for (Note n : chart.notes()) {
             if (n.judgement() >= SENTINEL) continue;
-            byKey.computeIfAbsent(key(n.type(), n.line(), n.type().inLane() ? n.laneId() : 0, n.judgement()),
-                k -> new ArrayDeque<>()).add(n);
+            float x = n.floats() ? n.floating().x() : n.hasX() ? n.x() : 0f;
+            byKey.computeIfAbsent(key(n.type(), n.line(), x, n.judgement(), n.floats()), k -> new ArrayDeque<>())
+                .add(n);
         }
         for (Doc.DNote d : doc.notes) {
-            ArrayDeque<Note> q = byKey.get(key(d.type, d.line, d.inLane() ? d.lane : 0, d.judgement));
+            boolean fl = d.floating && d.canFloat();
+            ArrayDeque<Note> q = byKey.get(key(d.type, fl ? Line.LOWER : d.line, d.inLane() ? d.x : 0f, d.judgement,
+                fl));
             Note n = q != null ? q.poll() : null;
             if (n != null) map.put(d.uid, n);
         }
@@ -250,8 +246,10 @@ public final class Session {
         return veilMap.get(d.uid);
     }
 
-    private static String key(NoteType t, Line l, int lane, float j) {
-        return t.ordinal() + "|" + l.ordinal() + "|" + lane + "|" + Float.floatToIntBits(j + 0f);
+    /** @param floating a floating key (悬浮键): its x, not a line, tells it apart */
+    private static String key(NoteType t, Line l, float x, float j, boolean floating) {
+        return t.ordinal() + "|" + l.ordinal() + "|" + Math.round(x * 100f) + "|" + Float.floatToIntBits(j + 0f)
+            + (floating ? "|f" : "");
     }
 
     /** @return the game's note built from {@code d}, or null when the game drops it (a duplicate). */

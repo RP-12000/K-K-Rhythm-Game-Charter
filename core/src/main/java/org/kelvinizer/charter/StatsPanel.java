@@ -15,16 +15,16 @@ import java.util.Locale;
  * 谱面统计面板：点状态栏右下角的「统计」打开，列出各类音符、事件的数量和其他统计（Kelvin 2026-10-13）。
  * The chart statistics panel, opened by the 统计 button at the right end of the editor's status
  * bar: notes by type and line, the game's score note count and sync notes, events by kind, and
- * lanes, tempo segments, trails and glitches, length and density. Note and event counts come from the editor's
+ * tempo segments, trails and glitches, length and density. Note and event counts come from the editor's
  * chart; the score count and the sync notes from the chart the game's loader built for the
  * preview; 假键 are left out of both. Everything is recounted only when the chart changes.
  */
 final class StatsPanel {
-    static final float W = 440f, H = 648f;
+    static final float W = 440f, H = 670f;
     /** Rows of the note table: type, and whether it is the form with a tail. */
-    private static final NoteType[] TYPES = {NoteType.TAP, NoteType.HOLD, NoteType.UNIVERSAL, NoteType.UNIVERSAL,
-        NoteType.MINE, NoteType.MINE, NoteType.TIDE_MINE, NoteType.TIDE_MINE};
-    private static final boolean[] TAIL = {false, true, false, true, false, true, false, true};
+    private static final NoteType[] TYPES = {NoteType.TAP, NoteType.HOLD, NoteType.DRAG, NoteType.UNIVERSAL,
+        NoteType.UNIVERSAL, NoteType.MINE, NoteType.MINE, NoteType.TIDE_MINE, NoteType.TIDE_MINE};
+    private static final boolean[] TAIL = {false, true, false, false, true, false, true, false, true};
     private static final String[] EV_NAMES = {"移动", "长度", "透明度", "旋转"};
 
     private Doc doc;
@@ -35,7 +35,7 @@ final class StatsPanel {
     private int scored, syncNotes, syncBeats, trails, glitches;
     /** Note events by kind (movement, length, opacity, rotation) and the relative ones among them. */
     private final int[] noteEv = new int[4], noteRel = new int[4];
-    private int laneEv, scaleEv, cameraEv, lineEv;
+    private int xEv, scaleEv, cameraEv, lineEv;
     /** First judgement to last end, judged notes per second on average and in the densest second. */
     private double lengthMs, perSecond;
     private int peak;
@@ -67,8 +67,8 @@ final class StatsPanel {
             last = Math.max(last, s.beatToMs(n.end()));
             if (n.type.judged() && !fake) judged[nj++] = ms;
         }
-        laneEv = 0;
-        for (Doc.DLane l : doc.lanes) laneEv += l.widthEv.size() + l.opacityEv.size();
+        xEv = 0;
+        for (Doc.DNote n : doc.notes) xEv += n.xEv.size();
         scaleEv = doc.laneScaleEv.size();
         cameraEv = doc.cameraFrameEv.size();
         lineEv = doc.upperEv.size() + doc.lowerEv.size();
@@ -97,7 +97,7 @@ final class StatsPanel {
 
     /** One line for the self-test log. */
     String summary() {
-        int all = 0, ev = laneEv + scaleEv + cameraEv + lineEv;
+        int all = 0, ev = xEv + scaleEv + cameraEv + lineEv;
         for (int[] r : notes) all += r[0] + r[1];
         for (int k = 0; k < 4; k++) ev += noteEv[k];
         return "notes " + all + ", scored " + scored + ", sync " + syncNotes + " on " + syncBeats
@@ -109,9 +109,10 @@ final class StatsPanel {
         switch (n.type) {
             case TAP: return 0;
             case HOLD: return 1;
-            case UNIVERSAL: return n.duration > 0f ? 3 : 2;
-            case TIDE_MINE: return n.duration > 0f ? 7 : 6;
-            default: return n.duration > 0f ? 5 : 4;
+            case DRAG: return 2;
+            case UNIVERSAL: return n.duration > 0f ? 4 : 3;
+            case TIDE_MINE: return n.duration > 0f ? 8 : 7;
+            default: return n.duration > 0f ? 6 : 5;
         }
     }
 
@@ -162,8 +163,8 @@ final class StatsPanel {
             num(g, noteEv[k], c3, ry, Gfx.INK1);
             total += noteEv[k];
         }
-        String[] names = {"轨道宽度 / 透明度", "全局缩放", "镜头平移", "判定线位置"};
-        int[] counts = {laneEv, scaleEv, cameraEv, lineEv};
+        String[] names = {"音符横坐标", "全局缩放", "镜头平移", "判定线位置"};
+        int[] counts = {xEv, scaleEv, cameraEv, lineEv};
         for (int k = 0; k < names.length; k++) {
             ry += 22f;
             g.text(names[k], l, ry, 13, Gfx.INK2);
@@ -176,8 +177,7 @@ final class StatsPanel {
         num(g, total, c3, ry, Gfx.INK1);
 
         ry += 36f;
-        String lanes = doc.laneCount > 0 ? "有限轨 " + doc.laneCount + " 条" : "无限轨（写出 " + doc.lanes.size() + " 条）";
-        g.text(g.fit("轨道 " + lanes + " · 变速 " + doc.bpms.size() + " 段 · 拖影 " + trails + " 个 · 故障 " + glitches + " 个",
+        g.text(g.fit("变速 " + doc.bpms.size() + " 段 · 拖影 " + trails + " 个 · 故障 " + glitches + " 个",
             12, W - 44f), l, ry, 12, Gfx.INK2);
         ry += 22f;
         long sec = Math.round(lengthMs / 1000.0);
