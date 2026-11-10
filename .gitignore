@@ -171,3 +171,5 @@ Thumbs.db
 /_tmp/
 /_old_charter_*/
 charter.properties
+## Voice split cache (stems of the songs; music is not in the repository)
+/voices/
