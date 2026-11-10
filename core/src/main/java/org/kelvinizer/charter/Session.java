@@ -1,31 +1,23 @@
 package org.kelvinizer.charter;
 
 import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.Gdx;
 import org.kelvinizer.elements.Chart;
-import org.kelvinizer.elements.ChartMapper;
-import org.kelvinizer.elements.Line;
-import org.kelvinizer.elements.Note;
-import org.kelvinizer.elements.NoteType;
-import org.kelvinizer.elements.Veil;
+import org.kelvinizer.elements.Chart7;
+import org.kelvinizer.elements.ChartV7Runtime;
 import org.kelvinizer.library.Difficulty;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 
 /**
- * 一次编辑：正在改的谱面、撤销/重做、选中的音符，以及保存（第一次覆盖前先备份）。
- * One editing session of one chart file: the document, undo / redo, the selection, the
- * {@link Chart} the preview plays (built by the game's own loader after every change) and saving,
- * with a backup before the file is first overwritten.
+ * 一次编辑：正在改的谱面、撤销/重做、选中的键、轨道和水幕水帘，以及保存（第一次覆盖前先备份）。
+ * One editing session of one chart file: the document, undo / redo, the selection (keys by uid, a lane by id, a veil
+ * or curtain by uid), the chart the preview plays ({@link #chart}, the doc as the game's model after every change)
+ * and saving, with a backup before the file is first overwritten.
  */
 public final class Session {
-    /** Beat of the invisible mine that keeps the preview engine running past the last note. */
-    public static final float SENTINEL = 100000f;
     private static final int UNDO_CAP = 200;
     /** While dragging, rebuilds wait this long (ms) after the previous one. */
     private static final long DRAG_BUILD_MS = 60L;
@@ -35,26 +27,27 @@ public final class Session {
     public final Difficulty diff;
     public final FileHandle file;
     public Doc doc;
-    /** What the preview plays (the doc plus the sentinel); the last good build when the doc is broken. */
-    public Chart chart;
-    public String buildError;
-    /** A note about how the file was read (old format, duplicates removed), or null. */
+    /** What the preview plays: a copy of the doc as the game's model, rebuilt after every change. */
+    public Chart7 chart;
+    /** The chart the game plays, built from {@link #chart} by the game ({@link ChartV7Runtime}); null if it failed. */
+    public Chart runtime;
+    /** A note about how the file was read (an older format converted), or null. */
     public String loadNote;
     public boolean dirty;
     /** Bumped on every change, so screens can cache what they derive from the doc. */
     public int version;
-    /** Selected notes by uid, in selection order. */
+    /** Selected keys by uid, in selection order. */
     public final LinkedHashSet<Integer> sel = new LinkedHashSet<>();
-    /** The line new notes go to. */
-    public Line placeLine = Line.LOWER;
-    /** Selected veil by uid (0 = none). */
-    public int veilSel;
+    /** No lane selected ({@link #laneSel}). */
+    public static final int NO_LANE = Integer.MIN_VALUE;
+    /** Selected lane id ({@link #NO_LANE} = none). */
+    public int laneSel = NO_LANE;
+    /** New keys go on the sky face (Tab), else on the base. */
+    public boolean placeSky;
+    /** Selected veil or curtain by uid (0 = none). */
+    public int volSel;
 
     private final ArrayDeque<Doc> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
-    private final HashMap<Integer, Note> map = new HashMap<>();
-    private final HashMap<Integer, Veil> veilMap = new HashMap<>();
-    /** {@link #chart} without the sentinel ({@link #liveChart}) and the build it was made for. */
-    private Chart liveChart, liveOf;
     private boolean buildPending;
     private long lastBuild;
     /** The file's modification time when it was read, saved or kept, to notice edits made outside the editor. */
@@ -68,28 +61,15 @@ public final class Session {
         this.doc = doc;
     }
 
-    /** Opens one difficulty of a song; older files arrive converted by the game's loader. */
+    /** Opens one difficulty of a song; older files arrive converted to format v7 ({@link Library#readDoc}). */
     public static Session open(Library lib, Library.Song song, Difficulty d) throws Exception {
         FileHandle f = song.diffs[d.ordinal()].file;
-        Chart c = ChartMapper.read(f, null, null);
-        Session s = new Session(lib, song, d, f, Doc.fromChart(c));
+        Library.Read r = lib.readDoc(f, d);
+        Session s = new Session(lib, song, d, f, r.doc);
         s.diskStamp = f.lastModified();
-        Doc.readRelFlags(s.doc, f);
-        StringBuilder note = new StringBuilder();
-        if (c.sourceFormat() < 4) {
-            note.append("旧格式 v").append(c.sourceFormat()).append(" 已换算成现在的坐标（1920×1200，判定线 1080 / 120），保存后写成 v")
-                .append(ChartMapper.FORMAT_VERSION).append("。");
-        } else if (c.sourceFormat() < ChartMapper.FORMAT_VERSION) {
-            note.append("旧格式 v").append(c.sourceFormat()).append("，保存后写成 v").append(ChartMapper.FORMAT_VERSION)
-                .append("（歌名、BPM、offset 写进 song.json）。");
-        }
-        int lost = c.loadReport().veilsDropped();
-        if (lost > 0) note.append("读取时丢掉了 ").append(lost).append(" 块漩涡或水帘（多边形能用的点不到 3 个）。");
-        int moved = s.doc.reflow();
-        if (moved > 0) note.append("按现在的 BPM 重新对齐了 ").append(moved).append(" 个统一流速的下落，保存后写进文件。");
-        s.loadNote = note.length() > 0 ? note.toString() : null;
+        s.loadNote = r.note;
         s.rebuild();
-        s.dirty = moved > 0;
+        s.dirty = r.note != null;
         return s;
     }
 
@@ -106,19 +86,17 @@ public final class Session {
     }
 
     /**
-     * Reads the chart file again, e.g. after another tool changed it (Kelvin 2026-10-13). The editor's
-     * version goes to the autosave first and stays one undo step back.
+     * Reads the chart file again, e.g. after another tool changed it (Kelvin 2026-10-13). The editor's version goes
+     * to the autosave first and stays one undo step back.
      */
     public void reload() throws Exception {
-        Doc d = Doc.fromChart(ChartMapper.read(file, null, null));
-        Doc.readRelFlags(d, file);
-        int moved = d.reflow();
+        Library.Read r = lib.readDoc(file, diff);
         lib.autosave(song, diff, doc.toJson());
         mark();
-        doc = d;
+        doc = r.doc;
         diskStamp = file.lastModified();
         afterHistory();
-        dirty = moved > 0;
+        dirty = r.note != null;
     }
 
     // ================================================================== changes
@@ -130,13 +108,8 @@ public final class Session {
         redo.clear();
     }
 
-    /** 同步链接 let go by the last changes (a copy changed by itself or its source gone), for a notice. */
-    int unlinked;
-
     /** Call after changing the doc; rebuilds the preview (at most every 60 ms while {@code dragging}). */
     public void changed(boolean dragging) {
-        doc.reflow();
-        unlinked += doc.relink();
         dirty = true;
         version++;
         if (dragging && System.currentTimeMillis() - lastBuild < DRAG_BUILD_MS) buildPending = true;
@@ -168,156 +141,78 @@ public final class Session {
 
     private void afterHistory() {
         sel.removeIf(u -> doc.byUid(u) == null);
-        if (doc.veilByUid(veilSel) == null) veilSel = 0;
+        if (doc.volByUid(volSel) == null) volSel = 0;
+        if (laneSel != NO_LANE && doc.lane(laneSel) == null) laneSel = NO_LANE;
         dirty = true;
         version++;
         rebuild();
     }
 
-    /** Builds the preview chart from the doc with the game's loader. */
+    /** Builds what the preview plays from the doc. */
     public void rebuild() {
         buildPending = false;
         lastBuild = System.currentTimeMillis();
+        chart = doc.toChart();
         try {
-            byte[] json = doc.toJson(SENTINEL).getBytes(StandardCharsets.UTF_8);
-            chart = ChartMapper.read(new ByteArrayInputStream(json), "editor");
-            buildError = null;
-            mapNotes();
-            mapVeils();
-        } catch (Exception e) {
-            buildError = e.getMessage() != null ? e.getMessage() : e.toString();
+            runtime = ChartV7Runtime.build(chart, doc.songChart());
+        } catch (RuntimeException e) {
+            runtime = null;
+            Gdx.app.error("Charter", "preview: " + e);
         }
-    }
-
-    /**
-     * @return what the preview plays in 实机: {@link #chart} without the sentinel, so the game's HUD counts the time
-     *         and progress to the last note (built on demand; {@link #chart} itself while the doc does not load)
-     */
-    public Chart liveChart() {
-        if (liveOf != chart) {
-            liveOf = chart;
-            liveChart = chart;
-            try {
-                byte[] json = doc.toJson().getBytes(StandardCharsets.UTF_8);
-                liveChart = ChartMapper.read(new ByteArrayInputStream(json), "editor");
-            } catch (Exception e) {
-                // keep the last good build
-            }
-        }
-        return liveChart;
-    }
-
-    /** Pairs every doc note with the note the game built from it; stacked notes pair in file order. */
-    private void mapNotes() {
-        map.clear();
-        HashMap<String, ArrayDeque<Note>> byKey = new HashMap<>();
-        for (Note n : chart.notes()) {
-            if (n.judgement() >= SENTINEL) continue;
-            float x = n.floats() ? n.floating().x() : n.hasX() ? n.x() : 0f;
-            byKey.computeIfAbsent(key(n.type(), n.line(), x, n.judgement(), n.floats()), k -> new ArrayDeque<>())
-                .add(n);
-        }
-        for (Doc.DNote d : doc.notes) {
-            boolean fl = d.floating && d.canFloat();
-            ArrayDeque<Note> q = byKey.get(key(d.type, fl ? Line.LOWER : d.line, d.inLane() ? d.x : 0f, d.judgement,
-                fl));
-            Note n = q != null ? q.poll() : null;
-            if (n != null) map.put(d.uid, n);
-        }
-    }
-
-    /** Pairs every doc veil and curtain with the one the game built from it (none for a polygon without 3 points). */
-    private void mapVeils() {
-        veilMap.clear();
-        mapVeils(doc.veils, chart.veils());
-        mapVeils(doc.curtains, chart.curtains());
-    }
-
-    private void mapVeils(List<Doc.DVeil> list, Veil[] built) {
-        int k = 0;
-        for (Doc.DVeil d : list) {
-            if (d.polygon && d.pointCount() < 3) continue;
-            if (k < built.length) veilMap.put(d.uid, built[k++]);
-        }
-    }
-
-    /** @return the game's veil built from {@code d}, or null when the game drops it. */
-    public Veil veil(Doc.DVeil d) {
-        return veilMap.get(d.uid);
-    }
-
-    /** @param floating a floating key (悬浮键): its x, not a line, tells it apart */
-    private static String key(NoteType t, Line l, float x, float j, boolean floating) {
-        return t.ordinal() + "|" + l.ordinal() + "|" + Math.round(x * 100f) + "|" + Float.floatToIntBits(j + 0f)
-            + (floating ? "|f" : "");
-    }
-
-    /** @return the game's note built from {@code d}, or null when the game drops it (a duplicate). */
-    public Note note(Doc.DNote d) {
-        return map.get(d.uid);
     }
 
     // ================================================================== time
 
     public double beatToMs(double beat) {
-        if (chart != null) return chart.beatToMs(beat);
-        return doc.offsetMs + beat * 60000.0 / doc.bpms.get(0).bpm;
+        return doc.offsetMs + doc.msOf(beat);
     }
 
     public double msToBeat(double ms) {
-        if (chart != null) return chart.msToBeat(ms);
-        return (ms - doc.offsetMs) * doc.bpms.get(0).bpm / 60000.0;
+        return doc.beatOf(ms - doc.offsetMs);
     }
 
     // ================================================================== selection
 
-    /** @return the selected notes in time order. */
-    public ArrayList<Doc.DNote> selected() {
-        ArrayList<Doc.DNote> out = new ArrayList<>();
+    /** @return the selected keys in time order. */
+    public ArrayList<Doc.DKey> selected() {
+        ArrayList<Doc.DKey> out = new ArrayList<>();
         if (sel.isEmpty()) return out;
-        for (Doc.DNote n : doc.notes) if (sel.contains(n.uid)) out.add(n);
+        for (Doc.DKey k : doc.keys) if (sel.contains(k.uid)) out.add(k);
         return out;
     }
 
-    /** @return the one selected note, or null when none or several are selected. */
-    public Doc.DNote single() {
+    /** @return the one selected key, or null when none or several are selected. */
+    public Doc.DKey single() {
         if (sel.size() != 1) return null;
         return doc.byUid(sel.iterator().next());
     }
 
-    public void select(Doc.DNote n, boolean add) {
+    public void select(Doc.DKey k, boolean add) {
         if (!add) sel.clear();
-        if (n != null) {
-            if (add && sel.contains(n.uid)) sel.remove(n.uid);
-            else sel.add(n.uid);
+        if (k != null) {
+            if (add && sel.contains(k.uid)) sel.remove(k.uid);
+            else sel.add(k.uid);
         }
     }
 
     // ================================================================== saving
 
     /**
-     * Writes the chart (after a backup of the old file) and shares the song texts and tempo with the
-     * other difficulties. 迭代次数 never drops below the file's own count (写谱辅助 counts its edits
-     * there) and grows by one whenever the old file is backed up.
+     * Writes the chart (after a backup of the old file) and the song values ({@code song.json}). 迭代次数 never drops
+     * below the file's own count and grows by one whenever the old file is backed up.
      */
     public void save() {
         doc.iterations = Math.max(doc.iterations, Doc.iterationsIn(file));
         if (lib.backup(song, file)) doc.iterations++;
-        try {
-            lib.writeChart(song, file, doc);
-        } catch (java.io.IOException e) {
-            com.badlogic.gdx.Gdx.app.error("Charter", "v5 save failed, kept as v4: " + e.getMessage());
-            file.writeString(doc.toJson(), false, "UTF-8");
-        }
+        lib.writeChart(song, file, doc);
         diskStamp = file.lastModified();
         lib.shareMeta(song, diff, doc.title, doc.artist, doc.illustrator, doc.bpms);
         // the preview window is set by beat: after a tempo or offset change its ms follow
-        // (unchanged keys stay as they are)
         if (!Float.isNaN(song.previewStartBeat) || !Float.isNaN(song.previewEndBeat))
             lib.setPreview(song, song.previewStartBeat, song.previewEndBeat, this::beatToMs);
         Library.Diff d = song.diffs[diff.ordinal()];
         d.constant = doc.constant;
-        d.notes = doc.notes.size();
+        d.notes = doc.keys.size();
         dirty = false;
     }
 }

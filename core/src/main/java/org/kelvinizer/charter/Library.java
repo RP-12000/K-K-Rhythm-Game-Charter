@@ -13,7 +13,10 @@ import org.kelvinizer.audio.Mp3Info;
 import org.kelvinizer.audio.WavDurationUtil;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.ChartMapper;
-import org.kelvinizer.elements.ChartUpgrade;
+import org.kelvinizer.elements.Chart7;
+import org.kelvinizer.elements.ChartFormatV7;
+import org.kelvinizer.elements.ChartV7Convert;
+import org.kelvinizer.elements.Seg;
 import org.kelvinizer.elements.SongInfo;
 import org.kelvinizer.library.ChartHeaderReader;
 import org.kelvinizer.library.Difficulty;
@@ -84,6 +87,8 @@ public final class Library {
         public boolean tutorial;
         /** Listed under 练习谱 below the singles (Kelvin 2026-11-02): see {@link #PRACTICE}. */
         public boolean practice;
+        /** The folder kept the old chart file names ({@link Difficulty#oldNames}): see {@link Library#renameCharts}. */
+        boolean oldNames;
         /** Jacket texture, loaded on first use by the screens (GL thread). */
         public Texture jacketTex;
         public boolean jacketTried;
@@ -314,14 +319,63 @@ public final class Library {
         return dir.isDirectory() ? dir : null;
     }
 
+    /**
+     * 旧文件名的歌第一次读到时改成新文件名（Kelvin 2026-11-10 05:50「第一次在旧谱那边打开的时候，把谱面文件的名字也都统一改了，
+     * 改成shallow/medium/deep」）：先 Shallow.json → Medium.json，再 Surface.json → Shallow.json，游戏 assets.txt 里的这两行跟着改。
+     * Renames an old-named song folder's charts ({@link Difficulty#oldNames}) to the new names, and the matching lines
+     * of the game's {@code assets.txt}. The folder keeps the old names, and is read that way, when a rename fails or it
+     * already holds a {@code Medium.json}, which the old naming never read.
+     *
+     * @return whether the folder now has the new names
+     */
+    boolean renameCharts(FileHandle dir) {
+        File d = dir.file(), surface = null, shallow = null;
+        String[] names = d.list();
+        if (names == null) return false;
+        for (String n : names) {
+            if (n.equalsIgnoreCase("Medium.json")) return false;
+            if (n.equalsIgnoreCase("Surface.json")) surface = new File(d, n);
+            if (n.equalsIgnoreCase("Shallow.json")) shallow = new File(d, n);
+        }
+        File medium = new File(d, "Medium.json");
+        if (surface == null || shallow != null && !shallow.renameTo(medium)) return false;
+        if (!surface.renameTo(new File(d, "Shallow.json"))) {
+            if (shallow != null) medium.renameTo(shallow);              // back to the old names
+            return false;
+        }
+        File root = charts.file().getAbsoluteFile().getParentFile(), up = d.getAbsoluteFile().getParentFile();
+        String rel = up.equals(root) ? d.getName()                      // the tutorial, beside Charts
+            : up.equals(charts.file().getAbsoluteFile()) ? charts.name() + "/" + d.getName() : null;
+        FileHandle list = new FileHandle(new File(root, "assets.txt"));
+        if (rel != null && root != null && list.exists()) {
+            try {
+                String text = list.readString("UTF-8"), q = "(?mi)^" + java.util.regex.Pattern.quote(rel + "/");
+                if (java.util.regex.Pattern.compile(q + "Surface\\.json$").matcher(text).find()) {
+                    list.writeString(text
+                        .replaceAll(q + "Shallow\\.json$", java.util.regex.Matcher.quoteReplacement(rel + "/Medium.json"))
+                        .replaceAll(q + "Surface\\.json$", java.util.regex.Matcher.quoteReplacement(rel + "/Shallow.json")),
+                        false, "UTF-8");
+                }
+            } catch (RuntimeException e) {
+                Gdx.app.error("Charter", "assets.txt: " + e.getMessage());
+            }
+        }
+        Gdx.app.log("Charter", "chart files renamed: " + dir.name());
+        return true;
+    }
+
     private Song readSong(FileHandle dir) {
         Song s = new Song(dir);
         s.audio = ChartMapper.findMusic(dir);
         s.jacket = ChartMapper.findJacket(dir);
         FileHandle[] files = dir.list();
+        ArrayList<String> names = new ArrayList<>();
+        for (FileHandle f : files) names.add(f.name());
+        s.oldNames = Difficulty.oldNames(names) && !renameCharts(dir);
+        if (!s.oldNames) files = dir.list();
         for (Difficulty d : Difficulty.values()) {
             for (FileHandle f : files) {
-                if (!f.isDirectory() && f.name().equalsIgnoreCase(d.fileName())) s.diffs[d.ordinal()].file = f;
+                if (!f.isDirectory() && f.name().equalsIgnoreCase(d.fileName(s.oldNames))) s.diffs[d.ordinal()].file = f;
             }
         }
         // song-level text comes from Shallow, else Surface, else the first chart (CHART_FORMAT §1)
@@ -485,6 +539,17 @@ public final class Library {
         for (Diff d : s.diffs) {
             if (!d.exists()) continue;
             try {
+                byte[] bytes = d.file.readBytes();
+                if (ChartFormatV7.isV7(bytes)) {
+                    d.notes = ChartFormatV7.read(new java.io.ByteArrayInputStream(bytes)).keys.size();
+                    SongInfo si = first ? SongInfo.besides(d.file) : null;
+                    if (si != null) {
+                        s.offsetMs = si.offsetMs;
+                        if (s.bpm <= 0f && si.bpm > 0f) s.bpm = si.bpm;
+                    }
+                    first = false;
+                    continue;
+                }
                 Chart c = ChartMapper.read(d.file);
                 d.notes = c.noteCount();
                 if (first) {
@@ -520,41 +585,150 @@ public final class Library {
         }
     }
 
-    /** Makes a distinct backup for every Claude-applied revision, even within one editor session. */
-    public boolean backupRevision(Song s, FileHandle f) {
-        if (f == null || !f.exists()) return false;
-        try {
-            FileHandle dir = home.child("backups").child(s.id);
-            String base = f.nameWithoutExtension() + "-" + stamp();
-            FileHandle dst = dir.child(base + ".json");
-            for (int i = 2; dst.exists(); i++) dst = dir.child(base + "-" + i + ".json");
-            f.copyTo(dst);
-            return true;
-        } catch (Exception e) {
-            Gdx.app.error("Charter", "backup failed: " + e.getMessage());
-            return false;
+    /** A chart file read for editing: the document and a note about how it was read (null = as it was). */
+    public static final class Read {
+        public final Doc doc;
+        public final String note;
+
+        Read(Doc doc, String note) {
+            this.doc = doc;
+            this.note = note;
         }
     }
 
     /**
-     * Writes a chart as v5 and its song values (title, artist, illustrator, tempo, offset) into the song's
-     * {@code song.json}, keeping that file's other keys (CHART_FORMAT §8, Kelvin 2026-10-27). The game's converter
-     * reads the v5 text back and compares every value; should anything differ, the chart is written as v4 text
-     * instead, which the game reads the same.
+     * Reads a difficulty file as a v7 document (Kelvin 2026-11-09 18:44): a v7 file as it is, with the song values
+     * of its {@code song.json}; an older one converted to v7 by the game ({@link #convertOld}).
      */
-    public void writeChart(Song s, FileHandle f, Doc doc) throws java.io.IOException {
-        byte[] v4 = doc.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        ChartUpgrade.Result r = ChartUpgrade.upgrade(f.name(), v4);
-        if (r.problems.isEmpty()) {
-            SongInfo song = SongInfo.of(ChartMapper.read(new java.io.ByteArrayInputStream(v4), f.name()));
-            FileHandle sj = s.dir.child(SONG_JSON);
+    public Read readDoc(FileHandle f, Difficulty d) throws Exception {
+        byte[] bytes = f.readBytes();
+        SongInfo song = SongInfo.besides(f);
+        if (ChartFormatV7.isV7(bytes)) {
+            return new Read(Doc.of(ChartFormatV7.read(new java.io.ByteArrayInputStream(bytes)), song, d.label()), null);
+        }
+        return convertOld(f, bytes, song, d);
+    }
+
+    /**
+     * An older chart (format 1 to 6) as a v7 document: the game's converter does the work, so the editor opens it
+     * as the game plays it. Saving writes it as v7.
+     */
+    private Read convertOld(FileHandle f, byte[] bytes, SongInfo song, Difficulty d) throws Exception {
+        Chart old = ChartMapper.readOld(f);
+        Doc doc = Doc.of(ChartV7Convert.convert(old), song, d.label());
+        if (song == null) {                                         // formats 1–4 carry their own song values
+            doc.title = nz(old.title());
+            doc.artist = nz(old.artist());
+            doc.illustrator = nz(old.illustrator());
+            doc.offsetMs = old.offsetMs();
+            doc.bpms.clear();
+            float[] b = old.bpmListBeats(), v = old.bpmListValues();
+            if (b != null && v != null) {
+                for (int i = 0; i < Math.min(b.length, v.length); i++) doc.bpms.add(new Doc.Tempo(b[i], v[i]));
+            }
+            doc.sortBpms();
+            if (doc.bpms.isEmpty() || doc.bpms.get(0).beat > 0f) doc.bpms.add(0, new Doc.Tempo(0f, old.bpm()));
+        }
+        if (doc.charter.isEmpty() && old.charter() != null) doc.charter = old.charter();
+        return new Read(doc, "这张谱是旧格式 v" + old.sourceFormat() + "，已按游戏的方法转成谱面版本 2.0（海面等 2.0 没有的东西去掉了）。"
+            + "保存时写成 2.0，原文件先备份。");
+    }
+
+    private static String nz(String s) {
+        return s != null ? s : "";
+    }
+
+    /**
+     * Writes a chart as v7 and its song values (title, artist, illustrator, tempo, offset) into the song's
+     * {@code song.json}, keeping that file's other keys.
+     */
+    public void writeChart(Song s, FileHandle f, Doc doc) {
+        FileHandle sj = s.dir.child(SONG_JSON);
+        try {
             String old = sj.exists() ? sj.readString("UTF-8") : null;
-            String out = song.mergeInto(old);
+            String out = doc.songInfo().mergeInto(old);
             if (!out.equals(old)) sj.writeString(out, false, "UTF-8");
-            f.writeString(r.json, false, "UTF-8");
-        } else {
-            Gdx.app.error("Charter", f.path() + " kept as v4: " + r.problems);
-            f.writeString(new String(v4, java.nio.charset.StandardCharsets.UTF_8), false, "UTF-8");
+        } catch (java.io.IOException e) {
+            Gdx.app.error("Charter", sj.path() + ": " + e.getMessage());
+        }
+        f.writeString(doc.toJson(), false, "UTF-8");
+    }
+
+    // ================================================================== 保存的曲线
+
+    /**
+     * 保存按键轨迹曲线（Kelvin 2026-11-09 05:27「记得加“保存按键轨迹曲线”」）：存在 Charter 文件夹的 move-curves.json，所有谱都能套用。
+     * A saved 移动 curve: its name and its events, beats from the key's judgement (0 = 判定).
+     */
+    public static final class Curve {
+        public final String name;
+        /** Each segment: start and end (beats from the judge beat), from, to, exponent (older files: more after). */
+        public final ArrayList<float[]> events = new ArrayList<>();
+
+        Curve(String name) {
+            this.name = name;
+        }
+    }
+
+    /** Not curves.json: older Charters kept their 动画曲线 templates there. */
+    private static final String CURVES = "move-curves.json";
+    private ArrayList<Curve> curves;
+
+    /** @return the saved 移动 curves, in the order saved (move-curves.json, read once) */
+    public List<Curve> curves() {
+        if (curves != null) return curves;
+        curves = new ArrayList<>();
+        FileHandle f = home.child(CURVES);
+        if (!f.exists()) return curves;
+        try {
+            com.badlogic.gdx.utils.JsonValue all = new com.badlogic.gdx.utils.JsonReader().parse(f.readString("UTF-8"))
+                .get("curves");
+            for (com.badlogic.gdx.utils.JsonValue c = all != null ? all.child : null; c != null; c = c.next) {
+                Curve k = new Curve(c.getString("name", "曲线"));
+                com.badlogic.gdx.utils.JsonValue ev = c.get("events");
+                for (com.badlogic.gdx.utils.JsonValue e = ev != null ? ev.child : null; e != null; e = e.next) {
+                    float[] v = e.asFloatArray();
+                    if (v.length >= 5) k.events.add(v);
+                }
+                if (!k.events.isEmpty()) curves.add(k);
+            }
+        } catch (Exception e) {
+            Gdx.app.error("Charter", CURVES + ": " + e.getMessage());
+        }
+        return curves;
+    }
+
+    /**
+     * Saves a key's h segments {@code move} as curve {@code name}, beats from {@code zero} (its judge beat; one of that
+     * name is replaced).
+     *
+     * @return false when move-curves.json could not be written
+     */
+    public boolean saveCurve(String name, List<Seg> move, float zero) {
+        Curve k = new Curve(name);
+        for (Seg e : move) k.events.add(new float[] {e.ti - zero, e.tf - zero, e.xi, e.xf, e.e});
+        List<Curve> all = curves();
+        all.removeIf(c -> c.name.equals(name));
+        all.add(k);
+        StringBuilder b = new StringBuilder("{ \"curves\": [\n");
+        for (int i = 0; i < all.size(); i++) {
+            Curve c = all.get(i);
+            b.append(i > 0 ? ",\n" : "").append("  { \"name\": ").append(Doc.str(c.name)).append(", \"events\": [");
+            for (int j = 0; j < c.events.size(); j++) {
+                float[] v = c.events.get(j);
+                b.append(j > 0 ? ", [" : "[");
+                for (int q = 0; q < v.length; q++) b.append(q > 0 ? ", " : "").append(Doc.num(v[q]));
+                b.append(']');
+            }
+            b.append("] }");
+        }
+        b.append("\n] }\n");
+        try {
+            home.child(CURVES).writeString(b.toString(), false, "UTF-8");
+            return true;
+        } catch (Exception e) {
+            Gdx.app.error("Charter", CURVES + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -588,34 +762,32 @@ public final class Library {
         return s;
     }
 
-    /** Creates a difficulty file: blank, or a copy of {@code from}. */
+    /** Creates a difficulty file: blank (the song's tempo from song.json), or a copy of {@code from}. */
     public void createDiff(Song s, Difficulty d, Difficulty from) throws Exception {
         Doc doc;
         if (from != null && s.diffs[from.ordinal()].exists()) {
-            doc = Doc.fromChart(ChartMapper.read(s.diffs[from.ordinal()].file));
-            Doc.readRelFlags(doc, s.diffs[from.ordinal()].file);
+            doc = readDoc(s.diffs[from.ordinal()].file, from).doc;
             doc.iterations = 0;                                  // a new chart starts its own count
         } else {
             doc = Doc.blank(s.name(), s.artist, s.illustrator, d.label(), s.bpm > 0f ? s.bpm : 120f, s.offsetMs);
-            for (Diff o : s.diffs) {                             // the song's shared tempo, if any
-                if (!o.exists()) continue;
-                try {
-                    Doc t = Doc.fromChart(ChartMapper.read(o.file));
-                    doc.bpms.clear();
-                    for (Doc.Seg g : t.bpms) doc.bpms.add(new Doc.Seg(g.beat, g.bpm));
-                    break;
-                } catch (Exception e) {
-                    Gdx.app.error("Charter", "no tempo from " + o.file.name() + ": " + e.getMessage());
-                }
+            SongInfo si = SongInfo.in(s.dir);                    // the song's shared tempo, if any
+            if (si != null) {
+                Doc t = Doc.of(new Chart7(), si, d.label());
+                doc.bpms.clear();
+                doc.bpms.addAll(t.bpms);
+                doc.offsetMs = t.offsetMs;
+                if (!t.title.isEmpty()) doc.title = t.title;
+                doc.artist = t.artist;
+                doc.illustrator = t.illustrator;
             }
             doc.constant = blankConstant(d);
         }
         doc.level = d.label();
-        FileHandle f = s.dir.child(d.fileName());
+        FileHandle f = s.dir.child(d.fileName(s.oldNames));
         writeChart(s, f, doc);
         s.diffs[d.ordinal()].file = f;
         s.diffs[d.ordinal()].constant = doc.constant;
-        s.diffs[d.ordinal()].notes = doc.notes.size();
+        s.diffs[d.ordinal()].notes = doc.keys.size();
     }
 
     /** 定数 of a new blank chart: Surface 1, Shallow 2, Deep 3 (Kelvin 2026-10-22), Abyss the old default 1. */
@@ -677,7 +849,7 @@ public final class Library {
      * {@code song.json} ({@link #writeChart}).
      */
     public void shareMeta(Song s, Difficulty except, String title, String artist, String illustrator,
-            List<Doc.Seg> bpms) {
+            List<Doc.Tempo> bpms) {
         Map<String, Object> m = new HashMap<>();
         m.put("title", title);
         m.put("artist", artist);

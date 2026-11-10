@@ -34,6 +34,9 @@ public final class Im extends InputAdapter {
     private int rawPresses, rawReleases, rawButton;
     private float rawScroll;
     private boolean lifted;
+    /** A second finger on a touch screen and where it is (two fingers turn the 3D view, Kelvin 2026-11-08 02:16). */
+    private boolean rawTwo;
+    private float rawX2, rawY2;
     private final StringBuilder rawTyped = new StringBuilder();
     private final IntArray rawKeys = new IntArray();
 
@@ -42,6 +45,11 @@ public final class Im extends InputAdapter {
     public boolean down, pressed, released, rightPressed;
     public float wheel;
     public boolean ctrl, shift, alt;
+    /** Two fingers are down (a touch screen), and their midpoint. */
+    public boolean two;
+    public float twoX, twoY;
+    /** Self-test: Alt, Ctrl and Shift count as held. */
+    public boolean testAlt, testCtrl, testShift;
     public final IntArray keys = new IntArray();
     private String typed = "";
     /** True while a popup or modal owns the mouse (normal widgets see no hover). */
@@ -70,6 +78,8 @@ public final class Im extends InputAdapter {
     private Object popupDoneId;
     private int popupDone = -1;
     private Modal modal;
+    /** A dialog its owner draws over the whole screen (the curve editor): it alone gets the mouse and the keys. */
+    public Runnable panel;
     private boolean chosenByEnter;
     private String toast;
     private float toastT;
@@ -104,6 +114,12 @@ public final class Im extends InputAdapter {
 
     // ================================================================== InputProcessor
 
+    private void second(int sx, int sy) {
+        vp.unproject(v.set(sx, sy));
+        rawX2 = v.x;
+        rawY2 = Gfx.H - v.y;
+    }
+
     private void move(int sx, int sy) {
         vp.unproject(v.set(sx, sy));
         rawX = v.x;
@@ -112,7 +128,12 @@ public final class Im extends InputAdapter {
 
     @Override
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-        if (pointer > 0) return true; // one finger at a time on a touch screen
+        if (pointer == 1) {
+            second(screenX, screenY);
+            rawTwo = true;
+            return true;
+        }
+        if (pointer > 0) return true; // one finger at a time on a touch screen (a second one only turns the view)
         move(screenX, screenY);
         if (button == Input.Buttons.LEFT) {
             rawDown = true;
@@ -125,6 +146,7 @@ public final class Im extends InputAdapter {
 
     @Override
     public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+        if (pointer == 1) rawTwo = false;
         if (pointer > 0) return true;
         move(screenX, screenY);
         if (button == Input.Buttons.LEFT) {
@@ -137,6 +159,7 @@ public final class Im extends InputAdapter {
 
     @Override
     public boolean touchDragged(int screenX, int screenY, int pointer) {
+        if (pointer == 1) second(screenX, screenY);
         if (pointer > 0) return true;
         move(screenX, screenY);
         return true;
@@ -173,6 +196,11 @@ public final class Im extends InputAdapter {
         my = rawY;
         int presses = rawPresses % 1000;
         rightPressed = rawPresses >= 1000;
+        two = rawTwo && rawDown;
+        if (two) {
+            twoX = (rawX + rawX2) * 0.5f;
+            twoY = (rawY + rawY2) * 0.5f;
+        }
         pressed = presses > 0;
         released = rawReleases > 0;
         down = rawDown || (pressed && !released);
@@ -189,11 +217,13 @@ public final class Im extends InputAdapter {
         keys.clear();
         keys.addAll(rawKeys);
         rawKeys.clear();
-        ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) || Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+        stepRepeat(heldKey(), delta);
+        ctrl = testCtrl || Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) || Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
             || Gdx.input.isKeyPressed(Input.Keys.SYM);
-        shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
-        alt = Gdx.input.isKeyPressed(Input.Keys.ALT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.ALT_RIGHT);
-        blocked = modal != null || (popupId != null && popupRect.contains(mx, my));
+        shift = testShift || Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+            || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+        alt = testAlt || Gdx.input.isKeyPressed(Input.Keys.ALT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.ALT_RIGHT);
+        blocked = modal != null || panel != null || (popupId != null && popupRect.contains(mx, my));
         focusLost = null;
         if (pressed && focus != null && !focusRect.contains(pressX, pressY)) {
             focusLost = focus;
@@ -205,6 +235,51 @@ public final class Im extends InputAdapter {
         cursor = Cursor.SystemCursor.Arrow;
         if (toastT > 0f) toastT -= delta;
         clips.clear();
+    }
+
+    // ---- 长按方向键 (Kelvin 2026-11-08 06:46「对于输入框，我有时候长按左/右箭头没法连续移动光标」)
+
+    /**
+     * Keys pressed again while held: the desktop window repeats only typed characters (they come again to
+     * {@link #keyTyped}), so a held arrow moved the caret one step. Arrows always; Backspace and Delete while a field
+     * has the focus (held on the canvas, Delete would go on to the selection); {@link #repeatAlso} off the fields.
+     */
+    private static final int[] ARROWS = {Input.Keys.LEFT, Input.Keys.RIGHT, Input.Keys.UP, Input.Keys.DOWN},
+        ERASE = {Input.Keys.BACKSPACE, Input.Keys.FORWARD_DEL};
+    private static final float REPEAT_DELAY = 0.4f, REPEAT_EVERY = 0.04f;
+    /** More keys repeated off the fields (the editor's W A S D while a node of a 轨迹 is picked), or null. */
+    public int[] repeatAlso;
+    /** Self-test: the key taken as held, −1 none. */
+    public int testHeld = -1;
+    private int repeatKey = -1;
+    private float repeatT;
+
+    /** @return the key held now that repeats, −1 none */
+    private int heldKey() {
+        if (testHeld >= 0) return testHeld;
+        for (int k : ARROWS) if (Gdx.input.isKeyPressed(k)) return k;
+        if (focus != null) {
+            for (int k : ERASE) if (Gdx.input.isKeyPressed(k)) return k;
+        } else if (repeatAlso != null) {
+            for (int k : repeatAlso) if (Gdx.input.isKeyPressed(k)) return k;
+        }
+        return -1;
+    }
+
+    /** Adds the presses key {@code held} makes this frame: the first after a short wait, then one every 40 ms. */
+    private void stepRepeat(int held, float delta) {
+        if (held != repeatKey || held >= 0 && keys.contains(held)) {   // another key, or pressed again: wait again
+            repeatKey = held;
+            repeatT = REPEAT_DELAY;
+            return;
+        }
+        if (held < 0) return;
+        repeatT -= delta;
+        for (int i = 0; repeatT <= 0f && i < 3; i++) {
+            keys.add(held);
+            repeatT += REPEAT_EVERY;
+        }
+        if (repeatT <= 0f) repeatT = REPEAT_EVERY;                      // a long frame: no burst after it
     }
 
     /** Ends the frame: clears a press nobody claimed, applies the cursor. */
@@ -264,8 +339,23 @@ public final class Im extends InputAdapter {
         if (inside(x, y, w, h)) blocked = true;
     }
 
+    /**
+     * A floating window drawn after the widgets it covers ({@link #block}ed for them): its own widgets get the mouse
+     * again, except under a popup. @return the state to hand {@link #drop} after the window
+     */
+    public boolean lift() {
+        boolean was = blocked;
+        blocked = modal != null || panel != null || popupId != null && popupRect.contains(mx, my);
+        return was;
+    }
+
+    /** Ends {@link #lift}: what is drawn after the window is blocked as before. */
+    public void drop(boolean was) {
+        blocked = was;
+    }
+
     public boolean modalOpen() {
-        return modal != null;
+        return modal != null || panel != null;
     }
 
     public boolean popupOpen() {
@@ -492,12 +582,6 @@ public final class Im extends InputAdapter {
     private String askHint;
     private boolean askBeats;
     boolean textBox = Gdx.app.getType() == Application.ApplicationType.Android;
-
-    void answer(Object id, String text) {
-        askId = null;
-        typedId = id;
-        typedText = text;
-    }
 
     private void ask(Object id, String value, String unit, boolean numeric) {
         askId = id;
@@ -931,7 +1015,8 @@ public final class Im extends InputAdapter {
     public static String fmt(float f) {
         if (Float.isNaN(f)) return "";
         if (f == Math.rint(f) && Math.abs(f) < 1e7f) return Long.toString((long) f);
-        String s = String.format(java.util.Locale.ROOT, "%.4f", f);
+        // the float's own shortest decimal (6351.24f, not its double 6351.2402…), at most 4 places
+        String s = String.format(java.util.Locale.ROOT, "%.4f", Double.parseDouble(Float.toString(f)));
         while (s.endsWith("0")) s = s.substring(0, s.length() - 1);
         if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
         return s;
@@ -986,6 +1071,11 @@ public final class Im extends InputAdapter {
 
     /** Draws the open popup, modal and toast, and handles their input. */
     public void overlay() {
+        if (panel != null) {                                         // under the hint, toast, popups and modals
+            blocked = modal != null || popupId != null && popupRect.contains(mx, my);
+            panel.run();
+            blocked = true;
+        }
         if (focusHint != null && focus != null) {                    // the focused number field's / hint
             Rectangle r = focusHintRect;
             float hw = g.width(focusHint, 11) + 16f, hx = Math.max(4f, Math.min(r.x, Gfx.W - hw - 4f));
