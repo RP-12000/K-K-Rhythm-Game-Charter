@@ -330,6 +330,11 @@ public final class Im extends InputAdapter {
         return focus != null;
     }
 
+    /** @return what is typed in field id so far while it has the focus (a search filtering as you type), else null */
+    public String live(Object id) {
+        return id.equals(focus) ? buf.toString() : null;
+    }
+
     public void cursor(Cursor.SystemCursor c) {
         cursor = c;
     }

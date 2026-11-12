@@ -11,9 +11,10 @@ import java.util.HashMap;
  * 谱面检查：「谱面」页和状态栏 ⚠ 里列出的问题，每一项都能跳到相关的键、轨道或幕布。
  * Chart checks for format v7, shown in the 谱面 tab and counted by the ⚠ badge: keys on a lane that does not exist,
  * 浪花 / 潮汐 spanning no lane (the game does not read them), keys without a fall (no judge beat), streams and tides of
- * length 0, keys judged while their lane is 0 wide, keys stacked on one lane, face and beat (an INFO: allowed, one
- * finger each) and keys judged away from their face (an INFO). Each item keeps the keys it is about, so 跳到 can
- * select them. 假键 are counted apart and only checked for a lane, a fall and a length (they are not judged).
+ * length 0 (an INFO since 11-11: allowed, e.g. a bar that turns into a lane), keys judged while their lane is 0 wide,
+ * keys stacked on one lane, face and beat (an INFO: allowed, one finger each) and keys judged away from their face
+ * (an INFO). Each item keeps the keys it is about, so 跳到 can select them. 假键 are counted apart and only checked
+ * for a lane, a fall and a length (they are not judged).
  */
 final class Checks {
     /** INFO lines are listed but not counted as problems. */
@@ -59,7 +60,7 @@ final class Checks {
         fakes = 0;
         Doc d = s.doc;
         Item noLane = new Item(ERROR, ""), noSpan = new Item(ERROR, ""), someSpan = new Item(WARN, "");
-        Item noFall = new Item(WARN, ""), zero = new Item(WARN, ""), hidden = new Item(WARN, "");
+        Item noFall = new Item(WARN, ""), zero = new Item(INFO, ""), hidden = new Item(WARN, "");   // zero: 11-11 弱警告
         Item stack = new Item(INFO, ""), away = new Item(INFO, "");
         HashMap<String, Integer> seen = new HashMap<>();
         for (Doc.DKey dk : d.keys) {
@@ -93,10 +94,20 @@ final class Checks {
         add(noSpan, "浪花 / 潮汐没有跨任何轨道（游戏不读）");
         add(someSpan, "浪花 / 潮汐跨的轨道有的不存在");
         add(noFall, "没有下落分段（判定拍未定）");
-        add(zero, "水流 / 潮汐长度为 0");
+        add(zero, "水流 / 潮汐长度为 0（允许）");
         add(hidden, "判定时轨道宽为 0（还没出现或已经消失）");
         add(stack, "同一轨道同一面同一拍叠着（每个要一根手指）");
         add(away, "判定时不在判定面上（h ≠ 0）");
+        Item mineStart = new Item(WARN, "");                           // 水雷 m before its first segment is that segment's start
+        int mines = 0;
+        for (Lane7 l : d.lanes) {
+            if (!(l.m.at(-1e6f) > 0f)) continue;
+            if (mines++ == 0) mineStart.lane = l.id;
+        }
+        if (mines > 0) {
+            mineStart.text = mines + " 条轨道从谱面开头就是水雷（水雷开头的值大于 0）";
+            items.add(mineStart);
+        }
         problems = 0;
         for (Item it : items) if (it.level == WARN || it.level == ERROR) problems++;
         if (items.isEmpty()) items.add(new Item(OK, d.keys.isEmpty() ? "还没有键" : "没有发现问题"));

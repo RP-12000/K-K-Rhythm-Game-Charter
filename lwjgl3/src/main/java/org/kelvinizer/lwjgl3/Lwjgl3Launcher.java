@@ -5,6 +5,7 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3WindowAdapter;
 import org.kelvinizer.charter.CharterApp;
 import org.kelvinizer.charter.Gfx;
+import org.kelvinizer.elements.ChartFormatV7;
 
 /**
  * 启动谱面编辑器（桌面版）：窗口可以改大小，默认最大化；关窗口前会问有没有没保存的修改。
@@ -20,7 +21,7 @@ public class Lwjgl3Launcher {
         String test = System.getProperty("kk.autotest");
         CharterApp app = new CharterApp(new DesktopPlatform(), test);
         Lwjgl3ApplicationConfiguration c = new Lwjgl3ApplicationConfiguration();
-        c.setTitle("K & K Charter");
+        c.setTitle("K & K Charter " + ChartFormatV7.VERSION);         // the version = the chart version
         c.useVsync(true);
         c.setForegroundFPS(Lwjgl3ApplicationConfiguration.getDisplayMode().refreshRate + 1);
         if (test != null) {

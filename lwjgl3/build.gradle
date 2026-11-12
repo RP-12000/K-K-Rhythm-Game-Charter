@@ -83,6 +83,7 @@ jar {
 // setting Multi-Release to true allows LWJGL3 to use different classes on recent Java versions.
   manifest {
     attributes 'Main-Class': application.mainClass, 'Enable-Native-Access': 'ALL-UNNAMED', 'Multi-Release': 'true'
+    attributes 'Implementation-Version': projectVersion   // the editor's version = the chart version, read by the self-test
   }
 // this last step may help on some OSes that need extra instruction to make runnable JARs.
   doLast {

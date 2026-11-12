@@ -1,11 +1,17 @@
 package org.kelvinizer.charter;
 
 import org.kelvinizer.elements.Chart7;
+import org.kelvinizer.elements.ChartV7Runtime;
 import org.kelvinizer.elements.Fn;
 import org.kelvinizer.elements.Fn3;
+import org.kelvinizer.elements.Group7;
 import org.kelvinizer.elements.Key7;
 import org.kelvinizer.elements.Lane7;
 import org.kelvinizer.elements.Volume7;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 编辑器自己的三维换算：镜头在哪（看着原点）、谱面里的一点在预览上的哪里、鼠标底下的射线，轨道在某一拍的位置和朝向。
@@ -53,15 +59,18 @@ final class Scene {
     static final double MAX_PITCH = 89.0;
     /** Nearer to the eye than this (along its view) is not drawn. */
     private static final double NEAR = 1.0;
-    /** A lane frame's floats: origin, across, up, depth (three each), then w, h, S, s, F, f. */
-    static final int LF = 18;
-    static final int O = 0, A = 3, U = 6, D = 9, W = 12, H = 13, SKY = 14, SKY_EXT = 15, GND = 16, GND_EXT = 17;
+    /** A lane frame's floats: origin, across, up, depth (three each), then w, h, S, s, F, f, its groups' size. */
+    static final int LF = 19;
+    static final int O = 0, A = 3, U = 6, D = 9, W = 12, H = 13, SKY = 14, SKY_EXT = 15, GND = 16, GND_EXT = 17,
+        KS = 18;
 
     /** Frame units → canvas pixels, and the frame's centre on the canvas. */
     float k = EditorScreen.K, cx = EditorScreen.PX + EditorScreen.PW * 0.5f,
         cy = EditorScreen.PY + EditorScreen.PH * 0.5f;
     /** The eye, and the camera's right, up and forward axes. */
     final double[] eye = new double[3], r = new double[3], u = new double[3], f = new double[3];
+    /** How far the editor's own move put the eye this frame, along the chart's axes ({@link #look}). */
+    final double[] moved = new double[3];
     /** The game's lens: 11° over the 1200-tall frame (600 / tan 5.5°), so the columns' front is at scale 1. */
     static final double FOCAL = 600.0 / Math.tan(Math.toRadians(5.5));
     /** The focal length in frame units: the chart's field of view over the 1200-tall frame, times the editor's zoom. */
@@ -76,9 +85,10 @@ final class Scene {
      * Sets the eye: the chart's camera at beat {@code t}, then turned about the origin by the editor ({@code yaw}
      * degrees round +y, {@code pitch} up), or one of the plain views ({@code preset} ≥ 0) at the same distance; the
      * lens is the chart's field of view {@code fov} at t (degrees, 11 by default, as the game: 1…150); {@code zoom}
-     * narrows it.
+     * narrows it. Last the editor's own {@code move} (right, up, forward along the view's axes; null none) carries
+     * the eye on, and the point it looks at with it: the view keeps its direction.
      */
-    void look(Fn3 cam, Fn fov, float t, float yaw, float pitch, float zoom, int preset) {
+    void look(Fn3 cam, Fn fov, float t, float yaw, float pitch, float zoom, int preset, float[] move) {
         double px = cam.x.at(t), py = cam.y.at(t), pz = cam.z.at(t);
         double d = Math.sqrt(px * px + py * py + pz * pz);
         if (!(d > 1e-3) || !Double.isFinite(d)) {
@@ -118,6 +128,10 @@ final class Scene {
         double deg = fov != null ? fov.at(t) : 11;
         deg = Double.isFinite(deg) ? Math.max(1, Math.min(150, deg)) : 11;
         focal = 600.0 / Math.tan(Math.toRadians(deg * 0.5)) * (zoom > 0f ? zoom : 1f);
+        for (int i = 0; i < 3; i++) {
+            moved[i] = move == null ? 0 : move[0] * r[i] + move[1] * u[i] + move[2] * f[i];
+            eye[i] += moved[i];
+        }
     }
 
     /**
@@ -148,18 +162,50 @@ final class Scene {
 
     // ================================================================== lanes
 
-    /** Lane {@code l} at beat {@code t} into lf ({@link #LF} floats). */
+    /** A lane's across, up and depth axes ({@link Lane7#axes}), for {@link #laneFrame}. */
+    private static final float[] AXES = new float[9];
+    /** 组 (chart 2.1): each group's pose by its id, as the game makes them ({@link #groups}). */
+    private static Map<Integer, Group7.Pose> poses = Collections.emptyMap();
+
+    /** Takes the document's groups for the lane frames (again after they change: the poses hold copies). */
+    static void groups(List<Group7> groups) {
+        poses = groups.isEmpty() ? Collections.emptyMap() : ChartV7Runtime.poses(groups);
+    }
+
+    /** @return group {@code id}'s pose (its transform with its parents', {@link Group7.Pose#at}), null for none */
+    static Group7.Pose pose(int id) {
+        return id != 0 ? poses.get(id) : null;
+    }
+
+    /**
+     * Lane {@code l} at beat {@code t} into lf ({@link #LF} floats); in a group (chart 2.1) where the group takes it,
+     * as the game draws it: its origin moved, its axes turned and its sizes times the group's.
+     */
     static void laneFrame(Lane7 l, float t, float[] lf) {
         lf[O] = l.v.x.at(t);
         lf[O + 1] = l.v.y.at(t);
         lf[O + 2] = l.v.z.at(t);
-        turn(l.u.x.at(t), l.u.y.at(t), l.u.z.at(t), lf, A);
+        l.axes(t, AXES);                                            // the game's own turn, facing n when written
+        System.arraycopy(AXES, 0, lf, A, 9);
         lf[W] = l.w.at(t);
         lf[H] = l.h.at(t);
         lf[SKY] = l.S.at(t);
         lf[SKY_EXT] = l.s.at(t);
         lf[GND] = l.F.at(t);
         lf[GND_EXT] = l.f.at(t);
+        lf[KS] = 1f;
+        Group7.Pose g = pose(l.g);
+        if (g == null) return;
+        g.at(t).point(lf[O], lf[O + 1], lf[O + 2], AXES);
+        System.arraycopy(AXES, 0, lf, O, 3);
+        if (g.turned) {
+            for (int ax = A; ax <= D; ax += 3) {
+                float x = lf[ax], y = lf[ax + 1], z = lf[ax + 2];
+                for (int i = 0; i < 3; i++) lf[ax + i] = g.m[3 * i] * x + g.m[3 * i + 1] * y + g.m[3 * i + 2] * z;
+            }
+        }
+        for (int i = W; i <= GND_EXT; i++) lf[i] *= g.k;
+        lf[KS] = g.k;
     }
 
     /** The point {@code a} across, {@code up} up and {@code d} deep from frame lf's origin, into out[o..o + 2]. */
@@ -168,56 +214,17 @@ final class Scene {
     }
 
     /**
-     * The turn of a lane that falls along (fx, fy, fz), as the game turns its lanes (LaneLayout.turn: chart axes; any
-     * length; none or NaN: straight down): the shortest turn that takes straight down to it, straight up half a turn
-     * about z. Into out[o..o + 8]: the turned across axis, up axis (against the fall) and depth axis.
-     */
-    static void turn(float fx, float fy, float fz, float[] out, int o) {
-        double len = Math.sqrt((double) fx * fx + (double) fy * fy + (double) fz * fz);
-        double bx = 0, by = -1, bz = 0;
-        if (len > 1e-9 && len < Double.POSITIVE_INFINITY) {
-            bx = fx / len;
-            by = fy / len;
-            bz = fz / len;
-        }
-        double s = bx * bx + bz * bz;
-        if (s < 1e-12) {
-            float k = by < 0 ? 1f : -1f;
-            out[o] = k;
-            out[o + 1] = 0f;
-            out[o + 2] = 0f;
-            out[o + 3] = 0f;
-            out[o + 4] = k;
-            out[o + 5] = 0f;
-            out[o + 6] = 0f;
-            out[o + 7] = 0f;
-            out[o + 8] = 1f;
-            return;
-        }
-        double q = by > 0 ? (1 + by) / s : 1 / (1 - by);
-        out[o] = (float) (1 - bx * bx * q);
-        out[o + 1] = (float) bx;
-        out[o + 2] = (float) (-bx * bz * q);
-        out[o + 3] = (float) -bx;
-        out[o + 4] = (float) -by;
-        out[o + 5] = (float) -bz;
-        out[o + 6] = (float) (-bx * bz * q);
-        out[o + 7] = (float) bz;
-        out[o + 8] = (float) (1 - bz * bz * q);
-    }
-
-    /**
      * @return how far up its lane key {@code k} is at beat {@code t} in the lane frame lf: a ground key {@code h}
      *         above the base, a sky key {@code h} under the sky face
      */
     static float keyUp(Key7 k, float t, float[] lf) {
-        float h = k.h.at(t);
+        float h = k.h.at(t) * lf[KS];
         return k.sky ? lf[SKY] - h : lf[GND] + h;
     }
 
-    /** @return how long key {@code k}'s body is at beat {@code t} (0 for a kind without a height) */
-    static float keyLength(Key7 k, float t) {
-        return k.kind.hasHeight() && !k.H.isEmpty() ? Math.max(0f, k.H.at(t)) : 0f;
+    /** @return how long key {@code k}'s body is at beat {@code t} on lane frame lf (0 for a kind without a height) */
+    static float keyLength(Key7 k, float t, float[] lf) {
+        return k.kind.hasHeight() && !k.H.isEmpty() ? Math.max(0f, k.H.at(t)) * lf[KS] : 0f;
     }
 
     /** @return whether key {@code k} shows at beat {@code t}: from its fall's start to its judgement (its end) */

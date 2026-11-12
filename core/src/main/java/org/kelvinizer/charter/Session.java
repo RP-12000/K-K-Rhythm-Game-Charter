@@ -4,7 +4,9 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.Gdx;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.Chart7;
+import org.kelvinizer.elements.ChartFormatV7;
 import org.kelvinizer.elements.ChartV7Runtime;
+import org.kelvinizer.library.ChartHeaderReader;
 import org.kelvinizer.library.Difficulty;
 
 import java.util.ArrayDeque;
@@ -46,6 +48,10 @@ public final class Session {
     public boolean placeSky;
     /** Selected veil or curtain by uid (0 = none). */
     public int volSel;
+    /** 组 (chart 2.1): the selected group by id (0 = none), and the group entered (进组: its things picked one by one). */
+    public int groupSel, groupIn;
+    /** What 成组 (Ctrl+G) takes: lanes and groups picked together (Shift + click), by id. */
+    public final LinkedHashSet<Integer> pickLanes = new LinkedHashSet<>(), pickGroups = new LinkedHashSet<>();
 
     private final ArrayDeque<Doc> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
     private boolean buildPending;
@@ -64,13 +70,53 @@ public final class Session {
     /** Opens one difficulty of a song; older files arrive converted to format v7 ({@link Library#readDoc}). */
     public static Session open(Library lib, Library.Song song, Difficulty d) throws Exception {
         FileHandle f = song.diffs[d.ordinal()].file;
+        ChartHeaderReader.Header was = header(f);
         Library.Read r = lib.readDoc(f, d);
         Session s = new Session(lib, song, d, f, r.doc);
         s.diskStamp = f.lastModified();
         s.loadNote = r.note;
         s.rebuild();
         s.dirty = r.note != null;
+        if (needsRefresh(was)) s.refresh(was, r.note);
         return s;
+    }
+
+    /**
+     * @return whether a chart file is saved at once as the current version when it is first opened: anything but a
+     *         {@code "format": "2.1"} file (Kelvin 2026-11-11 04:14 「文件里的format也改成2.0…所有对应位置全部修改」), so also a
+     *         2.1 file whose format is still a number (files before 7.239) and a {@code "2.2"} one, read as 2.1
+     *         (2026-11-12 06:06「2.2文件记得读取的时候全部把版本调回2.1」); a newer version is left as it is
+     */
+    static boolean needsRefresh(ChartHeaderReader.Header h) {
+        return h != null && !h.current && h.format <= ChartFormatV7.WRITE_FORMAT;
+    }
+
+    /** @return the chart file's header (format, chart version); null when it cannot be read */
+    static ChartHeaderReader.Header header(FileHandle f) {
+        try {
+            return ChartHeaderReader.read(f);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 第一次打开自动刷新成最新版本 (Kelvin 2026-11-11 02:27「就是说别人换新编辑器的时候，第一次打开自动刷新成最新版本」): a file
+     * {@link #needsRefresh} picks is saved at once as the current version, after the usual backup.
+     */
+    private void refresh(ChartHeaderReader.Header was, String converted) {
+        String ver = Library.version();
+        try {
+            save();
+        } catch (RuntimeException e) {
+            Gdx.app.error("Charter", "could not refresh " + file.path() + ": " + e.getMessage());
+            if (converted != null) loadNote = converted + "保存时写成 " + ver + "，原文件先备份。";
+            return;
+        }
+        String backup = "原文件备份在 Charter 的 backups 文件夹。", saved = "第一次打开已自动存成 " + ver + "，" + backup;
+        if (converted != null) loadNote = converted + saved;
+        else if (was.format < ChartFormatV7.WRITE_FORMAT) loadNote = "这张谱是谱面版本 " + was.version + "，" + saved;
+        else loadNote = "这张谱文件里的 format 不是 \"" + ver + "\"，第一次打开已自动改写成 \"format\": \"" + ver + "\"，" + backup;
     }
 
     // ================================================================== outside edits
@@ -143,6 +189,10 @@ public final class Session {
         sel.removeIf(u -> doc.byUid(u) == null);
         if (doc.volByUid(volSel) == null) volSel = 0;
         if (laneSel != NO_LANE && doc.lane(laneSel) == null) laneSel = NO_LANE;
+        if (doc.group(groupSel) == null) groupSel = 0;
+        if (doc.group(groupIn) == null) groupIn = 0;
+        pickLanes.removeIf(id -> doc.lane(id) == null);
+        pickGroups.removeIf(id -> doc.group(id) == null);
         dirty = true;
         version++;
         rebuild();

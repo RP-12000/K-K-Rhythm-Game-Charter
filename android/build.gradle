@@ -52,7 +52,7 @@ android {
     // 35, not 36: Android 16 ignores the landscape lock on tablets for apps that target 36
     targetSdkVersion 35
     versionCode 1
-    versionName "1.0.0"
+    versionName "$projectVersion"
   }
   compileOptions {
     sourceCompatibility "11"

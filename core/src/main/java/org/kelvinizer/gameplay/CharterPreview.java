@@ -232,7 +232,7 @@ public final class CharterPreview {
             else if (line != null) field.bead(line, ev.x, runTime);
         } else if (ev.type == GameEvent.HOLD_END && ev.has(GameEvent.FLAG_COMPLETED)
             && ev.has(GameEvent.FLAG_TIDE_STREAM)) {
-            wash.complete(line, ev.judgement == Judgement.RESONANCE, runTime);
+            wash.complete(engine, ev.note, line, ev.judgement == Judgement.RESONANCE, runTime);
         }
     }
 
@@ -240,7 +240,7 @@ public final class CharterPreview {
     private void washHit(Line line, boolean resonance) {
         Note on = ev.note >= 0 ? chart.note(ev.note) : null;
         if (on != null && on.sea() != null) wash.hitSea(on.sea(), line, resonance, runTime);
-        else wash.hit(line, resonance, runTime);
+        else wash.hit(engine, ev.note, line, resonance, runTime); // on the lanes it spans (game 7.240)
     }
 
     /** Live: {@code GameplayScreen.consumeEvents} for an autoplay run at High quality, without the sounds. */
@@ -294,19 +294,19 @@ public final class CharterPreview {
                     fx.release(based ? basePt[0] : fxPt[0], based ? basePt[1] : fxPt[1], ev.judgement, k, sky);
                 }
                 if (completed) {
-                    if (tide) wash.complete(line, ev.judgement == Judgement.RESONANCE, runTime);
+                    if (tide) wash.complete(engine, ev.note, line, ev.judgement == Judgement.RESONANCE, runTime);
                 } else {
                     fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
-                    field.flash(line, ev.lane, false, runTime);
+                    if (!spanFlash(ev.note, line)) field.flash(line, ev.lane, false, runTime);
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
-                    if (tide && !engine.tideRunning(line)) wash.drain(line, runTime);
+                    if (tide) wash.drain(engine, ev.note, line, runTime); // unless another one keeps it up
                 }
                 break;
             }
             case GameEvent.LOST:
                 fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
-                if (universal) field.flashWindow(line, false, runTime);
-                else field.flash(line, ev.lane, false, runTime);
+                if (universal && !spanFlash(ev.note, line)) field.flashWindow(line, false, runTime);
+                else if (ev.lane >= 0) field.flash(line, ev.lane, false, runTime); // a DRAG off the lanes: none
                 hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                 break;
             case GameEvent.MINE:
@@ -318,6 +318,21 @@ public final class CharterPreview {
             default:
                 break;
         }
+    }
+
+    /**
+     * A missed TIDE or TIDE STREAM over separate lanes flashes each column it spans instead of the window, as
+     * {@code GameplayScreen.spanFlash} (game 7.240, Kelvin 2026-11-11 05:30 「只在那些跨过的轨道」).
+     *
+     * @return false when it is not one (no note, one on a sea, or the lanes are not separate)
+     */
+    private boolean spanFlash(int note, Line line) {
+        if (note < 0 || line == null || !engine.layout().separate()) return false;
+        Note n = chart.note(note);
+        if (n.type().inLane() || n.sea() != null) return false;
+        int m = wash.columns(engine, note);
+        for (int k = 0; k < m; k++) field.flash(line, wash.column(k), false, runTime);
+        return true;
     }
 
     /** The hit ripple and EARLY / LATE chevron of a judged lane hit (a TIDE swells the tide wash instead). */
@@ -538,6 +553,14 @@ public final class CharterPreview {
      */
     public void zoom(float k) {
         zoom = k > 0f && k < Float.POSITIVE_INFINITY ? k : 1f;
+    }
+
+    /**
+     * Moves the 3D view and the point it looks at by (x, y, z) (reference units along the chart's axes) while editing
+     * (Kelvin 2026-11-10 20:26 「ctrl+alt+箭头可以前后左右移动camera位置」; 0, 0, 0 = 归位). The game never moves it.
+     */
+    public void pan(float x, float y, float z) {
+        view.pan(x, y, z);
     }
 
     /**

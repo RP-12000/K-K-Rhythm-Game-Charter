@@ -5,6 +5,7 @@ import org.kelvinizer.elements.Chart7;
 import org.kelvinizer.elements.ChartFormatV7;
 import org.kelvinizer.elements.Fn;
 import org.kelvinizer.elements.Fn3;
+import org.kelvinizer.elements.Group7;
 import org.kelvinizer.elements.JudgementLine;
 import org.kelvinizer.elements.Key7;
 import org.kelvinizer.elements.KeyKind;
@@ -59,6 +60,8 @@ public final class Doc {
     public final ArrayList<DKey> keys = new ArrayList<>();
     /** The veils (漩涡) and curtains (水帘), in the file's order. */
     public final ArrayList<DVol> vols = new ArrayList<>();
+    /** 组 (chart version 2.1, Kelvin 2026-11-11 17:32): lanes ({@link Lane7#g}) and groups moved as one piece. */
+    public final ArrayList<Group7> groups = new ArrayList<>();
     /** The camera position P (it always looks at the origin). */
     public final Fn3 camera = new Fn3(0f, 0f, -Chart7.CAMERA_DIST);
     /** The camera's vertical field of view, degrees (default 11, used clamped to 1…150). */
@@ -170,6 +173,7 @@ public final class Doc {
         for (Lane7 l : lanes) d.lanes.add(copyLane(l));
         for (DKey k : keys) d.keys.add(k.copy());
         for (DVol v : vols) d.vols.add(v.copy());
+        for (Group7 g : groups) d.groups.add(g.copy());
         copyFn3(camera, d.camera);
         copyFn(fov, d.fov);
         d.names.putAll(names);
@@ -192,7 +196,9 @@ public final class Doc {
 
     public static Lane7 copyLane(Lane7 l) {
         Lane7 c = new Lane7(l.id, 0f);
+        c.g = l.g;
         copyFn3(l.u, c.u);
+        copyFn3(l.n, c.n);
         copyFn3(l.v, c.v);
         copyFn(l.w, c.w);
         copyFn(l.h, c.h);
@@ -201,6 +207,8 @@ public final class Doc {
         copyFn(l.F, c.F);
         copyFn(l.f, c.f);
         copyFn(l.o, c.o);
+        copyFn(l.m, c.m);
+        copyFn(l.l, c.l);
         return c;
     }
 
@@ -238,9 +246,10 @@ public final class Doc {
         return l != null ? new ArrayList<>(l) : new ArrayList<>();
     }
 
-    /** @return every function of lane {@code l}: u x y z, v x y z, w, h, S, s, F, f, opacity o */
+    /** @return every function of lane {@code l}: u x y z, v x y z, w, h, S, s, F, f, opacity o, n x y z, 水雷 m, 轨道本身 l */
     public static Fn[] fns(Lane7 l) {
-        return new Fn[] {l.u.x, l.u.y, l.u.z, l.v.x, l.v.y, l.v.z, l.w, l.h, l.S, l.s, l.F, l.f, l.o};
+        return new Fn[] {l.u.x, l.u.y, l.u.z, l.v.x, l.v.y, l.v.z, l.w, l.h, l.S, l.s, l.F, l.f, l.o,
+            l.n.x, l.n.y, l.n.z, l.m, l.l};
     }
 
     // ================================================================== functions
@@ -306,6 +315,18 @@ public final class Doc {
                 f.segs.add(k + 1, new Seg(Math.max(s.ti, s.tf), t, s.xf, v, 1f));
             }
         }
+        f.sort();
+    }
+
+    /**
+     * Makes {@code f} {@code v} from beat a to beat b: a jump there at a and one back at b to what it was at b; the
+     * segments that started in between go (「+ 从播放头变红 1 拍」 on a lane's 水雷, Kelvin 2026-11-10 23:01).
+     */
+    public static void span(Fn f, float a, float b, float v) {
+        float before = f.at(a - 1e-3f), after = f.at(b);
+        f.segs.removeIf(s -> s.ti >= a - EPS && s.ti < b - EPS);
+        f.segs.add(new Seg(a, a, before, v, 1f));
+        f.segs.add(new Seg(b, b, v, after, 1f));
         f.sort();
     }
 
@@ -429,6 +450,7 @@ public final class Doc {
         for (DVol v : vols) {
             for (Fn f : fns(v.v)) b = Math.max(b, lastTf(f));
         }
+        for (Group7 g : groups) for (Fn f : fns(g)) b = Math.max(b, lastTf(f));
         b = Math.max(b, Math.max(lastTf(camera.x), Math.max(lastTf(camera.y), lastTf(camera.z))));
         b = Math.max(b, lastTf(fov));
         for (Tempo s : bpms) b = Math.max(b, s.beat);
@@ -742,6 +764,500 @@ public final class Doc {
         return new Fn[] {v.V.x, v.V.y, v.V.z, v.p.x, v.p.y, v.p.z, v.o.x, v.o.y, v.o.z, v.b};
     }
 
+    /** @return group g's functions: P x y z, R x y z, K, o */
+    public static Fn[] fns(Group7 g) {
+        return new Fn[] {g.P.x, g.P.y, g.P.z, g.R.x, g.R.y, g.R.z, g.K, g.o};
+    }
+
+    /** @return group {@code id}, or null */
+    public Group7 group(int id) {
+        if (id == 0) return null;
+        for (Group7 g : groups) if (g.id == id) return g;
+        return null;
+    }
+
+    // ================================================================== groups (组, chart 2.1)
+
+    /** @return an id no group has: one more than the largest (1 for the first) */
+    public int nextGroupId() {
+        int id = 0;
+        for (Group7 g : groups) id = Math.max(id, g.id);
+        return id + 1;
+    }
+
+    /** @return what group g is called: its name, else 「组」 and its id */
+    public static String groupLabel(Group7 g) {
+        return g.name != null && !g.name.trim().isEmpty() ? g.name.trim() : "组 " + g.id;
+    }
+
+    /** @return the id of the group group {@code id} is in, 0 for none (or one that is not there) */
+    public int parentOf(int id) {
+        Group7 g = group(id);
+        return g != null && group(g.p) != null ? g.p : 0;
+    }
+
+    /**
+     * @return what a click on a thing in group {@code g} (0: none) picks while group {@code level} is entered (0: the
+     *         chart): 0 the thing itself (it is right in level), else the group right under level that it is in;
+     *         {@link Integer#MIN_VALUE} when it is not in level
+     */
+    public int pickIn(int g, int level) {
+        int below = 0;
+        for (int i = 0; i <= groups.size(); i++) {                     // up the chain (a ring ends)
+            if (g == level) return below;
+            if (group(g) == null) return level == 0 ? below : Integer.MIN_VALUE;
+            below = g;
+            g = parentOf(g);
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** @return whether a thing in group {@code g} (0: none) is in group {@code id}, at any depth */
+    public boolean within(int g, int id) {
+        for (int i = 0; i <= groups.size() && g != 0; i++) {
+            if (g == id) return true;
+            g = parentOf(g);
+        }
+        return false;
+    }
+
+    /** @return how many lanes are in group {@code id}, its groups' too */
+    public int laneCount(int id) {
+        int n = 0;
+        for (Lane7 l : lanes) if (within(l.g, id)) n++;
+        return n;
+    }
+
+    /**
+     * 成组 (Ctrl+G): a new group in group {@code parent} (0: the chart) holding lanes {@code ls} and groups {@code gs}
+     * (all right in parent). Its centre is where theirs are on average at beat {@code t} (rounded) and each of them
+     * moves the other way by as much, so nothing moves. @return it
+     */
+    public Group7 makeGroup(List<Lane7> ls, List<Group7> gs, int parent, float t) {
+        Group7 g = new Group7(nextGroupId());
+        g.p = parent;
+        g.name = "组 " + g.id;
+        float[] c = new float[3];
+        for (Lane7 l : ls) addTo(c, l.v.x.at(t), l.v.y.at(t), l.v.z.at(t));
+        for (Group7 h : gs) addTo(c, h.P.x.at(t), h.P.y.at(t), h.P.z.at(t));
+        int n = Math.max(1, ls.size() + gs.size());
+        for (int i = 0; i < 3; i++) c[i] = Float.isFinite(c[i]) ? Math.round(c[i] / n) : 0f;
+        g.P.x.constant = c[0];
+        g.P.y.constant = c[1];
+        g.P.z.constant = c[2];
+        for (Lane7 l : ls) {
+            offset3(l.v.x, l.v.y, l.v.z, c, -1f);
+            l.g = g.id;
+        }
+        for (Group7 h : gs) {
+            offset3(h.P.x, h.P.y, h.P.z, c, -1f);
+            h.p = g.id;
+        }
+        groups.add(g);
+        return g;
+    }
+
+    private static void addTo(float[] c, float x, float y, float z) {
+        c[0] += x;
+        c[1] += y;
+        c[2] += z;
+    }
+
+    private static void offset3(Fn x, Fn y, Fn z, float[] c, float k) {
+        offset(x, c[0] * k);
+        offset(y, c[1] * k);
+        offset(z, c[2] * k);
+    }
+
+    /** Multiplies f's values by k (its constant and its segments' ends). */
+    public static void scale(Fn f, float k) {
+        f.constant *= k;
+        for (Seg s : f.segs) {
+            s.xi *= k;
+            s.xf *= k;
+        }
+    }
+
+    /**
+     * 解组: group {@code id}'s lanes and groups go into the group it is in (0: the chart), each where it is now (its
+     * origin or centre through the group's move, turn and size, its sizes and its keys' falls times the group's size,
+     * its opacity times the group's), and the group goes. A group that moves (with segments) is not taken apart, nor a
+     * turned one with something in it that moves or turns: that would change how they move.
+     *
+     * @return null when done, else why not (nothing changed)
+     */
+    public String ungroup(int id) {
+        Group7 g = group(id);
+        if (g == null) return "没有这个组";
+        for (Fn f : fns(g)) {
+            if (!f.segs.isEmpty()) return "组「" + groupLabel(g) + "」的位置、旋转、缩放或透明度有分段（在动），解组以后动作会变："
+                + "先去掉这些分段再解组";
+        }
+        float k = g.K.constant, o = g.o.constant >= 0f ? Math.min(1f, g.o.constant) : g.o.constant < 0f ? 0f : 1f;
+        if (!(k > 0f) || k == Float.POSITIVE_INFINITY) return "组「" + groupLabel(g) + "」的缩放是 0，解组会让里面的东西没了大小";
+        Group7 at = g.copy();                                           // its turn alone
+        at.p = 0;
+        at.P.x.constant = at.P.y.constant = at.P.z.constant = 0f;
+        at.K.constant = 1f;
+        Group7.Pose turn = new Group7.Pose(at, null).at(0f);
+        float[] m = turn.m, cv = {g.P.x.constant, g.P.y.constant, g.P.z.constant};
+        if (turn.turned) {
+            for (Lane7 l : lanes) {
+                if (l.g != id) continue;
+                for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z}) {
+                    if (!f.segs.isEmpty()) return "组「" + groupLabel(g) + "」转过，里面的轨道「" + laneLabel(l.id)
+                        + "」又在移动或转向：先把组的旋转改回 0 再解组";
+                }
+            }
+            for (Group7 h : groups) {
+                if (h.p != id) continue;
+                for (Fn f : new Fn[]{h.P.x, h.P.y, h.P.z, h.R.x, h.R.y, h.R.z}) {
+                    if (!f.segs.isEmpty()) return "组「" + groupLabel(g) + "」转过，里面的组「" + groupLabel(h)
+                        + "」又在移动或转：先把组的旋转改回 0 再解组";
+                }
+            }
+        }
+        int up = parentOf(id);
+        float[] a = new float[9], q = new float[3];
+        java.util.HashSet<DKey> sized = new java.util.HashSet<>();
+        for (Lane7 l : lanes) {
+            if (l.g != id) continue;
+            if (turn.turned) {                                          // all of it fixed: turn it as the game did
+                l.axes(0f, a);
+                turnInto(m, l.v.x.constant, l.v.y.constant, l.v.z.constant, q);
+                setConst(l.v, q[0] * k + cv[0], q[1] * k + cv[1], q[2] * k + cv[2]);
+                turnInto(m, l.u.x.constant, l.u.y.constant, l.u.z.constant, q);
+                setConst(l.u, q[0], q[1], q[2]);
+                turnInto(m, -a[6], -a[7], -a[8], q);                    // it faces where it faced: n = −depth
+                setConst(l.n, q[0], q[1], q[2]);
+            } else {
+                for (int i = 0; i < 3; i++) {
+                    Fn f = i == 0 ? l.v.x : i == 1 ? l.v.y : l.v.z;
+                    scale(f, k);
+                    offset(f, cv[i]);
+                }
+            }
+            for (Fn f : new Fn[]{l.w, l.h, l.S, l.s, l.F, l.f}) scale(f, k);
+            if (o != 1f) scale(l.o, o);
+            for (DKey dk : keys) {
+                if (dk.lane() != l.id || !sized.add(dk)) continue;
+                scale(dk.k.h, k);
+                scale(dk.k.H, k);
+            }
+            l.g = up;
+        }
+        for (Group7 h : groups) {
+            if (h.p != id) continue;
+            if (turn.turned) {
+                turnInto(m, h.P.x.constant, h.P.y.constant, h.P.z.constant, q);
+                setConst(h.P, q[0] * k + cv[0], q[1] * k + cv[1], q[2] * k + cv[2]);
+                Group7 own = h.copy();
+                own.p = 0;
+                own.P.x.constant = own.P.y.constant = own.P.z.constant = 0f;
+                own.K.constant = 1f;
+                float[] r = new Group7.Pose(own, null).at(0f).m, both = new float[9];
+                for (int i = 0; i < 3; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        both[3 * i + j] = m[3 * i] * r[j] + m[3 * i + 1] * r[3 + j] + m[3 * i + 2] * r[6 + j];
+                    }
+                }
+                euler(both, q);
+                setConst(h.R, q[0], q[1], q[2]);
+            } else {
+                for (int i = 0; i < 3; i++) {
+                    Fn f = i == 0 ? h.P.x : i == 1 ? h.P.y : h.P.z;
+                    scale(f, k);
+                    offset(f, cv[i]);
+                }
+            }
+            scale(h.K, k);
+            if (o != 1f) scale(h.o, o);
+            h.p = up;
+        }
+        groups.remove(g);
+        return null;
+    }
+
+    /** Turns (x, y, z) by m (rows) into out. */
+    private static void turnInto(float[] m, float x, float y, float z, float[] out) {
+        for (int i = 0; i < 3; i++) out[i] = m[3 * i] * x + m[3 * i + 1] * y + m[3 * i + 2] * z;
+    }
+
+    private static void setConst(Fn3 f, float x, float y, float z) {
+        f.x.constant = round3(x);
+        f.y.constant = round3(y);
+        f.z.constant = round3(z);
+    }
+
+    private static float round3(float v) {
+        return Math.round(v * 1000f) / 1000f;
+    }
+
+    /**
+     * The turn m (rows, = Ry·Rx·Rz as {@link Group7.Pose} makes it) as degrees about x, y and z into out (x within
+     * ±90°; straight up or down: no turn about z).
+     */
+    static void euler(float[] m, float[] out) {
+        double sx = Math.max(-1.0, Math.min(1.0, -m[5]));
+        double x = Math.asin(sx), y, z;
+        if (Math.abs(sx) < 0.99999) {
+            y = Math.atan2(m[2], m[8]);
+            z = Math.atan2(m[3], m[4]);
+        } else {
+            y = Math.atan2(-m[6], m[0]);
+            z = 0;
+        }
+        out[0] = (float) Math.toDegrees(x);
+        out[1] = (float) Math.toDegrees(y);
+        out[2] = (float) Math.toDegrees(z);
+    }
+
+    // ================================================================== 场景页: copies, moves, turns, mirrors, models
+
+    /** Lanes and groups picked together on the 场景 page (all right in one group). */
+    public static final class Items {
+        public final ArrayList<Lane7> lanes = new ArrayList<>();
+        public final ArrayList<Group7> groups = new ArrayList<>();
+
+        public boolean isEmpty() {
+            return lanes.isEmpty() && groups.isEmpty();
+        }
+
+        public int size() {
+            return lanes.size() + groups.size();
+        }
+
+        /** Adds what {@code o} holds. */
+        public void addAll(Items o) {
+            lanes.addAll(o.lanes);
+            groups.addAll(o.groups);
+        }
+    }
+
+    /** @return the group everything in {@code it} is right in (0: the chart), −1 when they are not all in one */
+    public int parentOf(Items it) {
+        int p = Integer.MIN_VALUE;
+        for (Lane7 l : it.lanes) {
+            int q = group(l.g) != null ? l.g : 0;
+            if (p != Integer.MIN_VALUE && q != p) return -1;
+            p = q;
+        }
+        for (Group7 g : it.groups) {
+            int q = parentOf(g.id);
+            if (p != Integer.MIN_VALUE && q != p) return -1;
+            p = q;
+        }
+        return p == Integer.MIN_VALUE ? 0 : p;
+    }
+
+    /**
+     * Copies of {@code it} in the group they are in, with new ids: groups with everything in them, names numbered on
+     * (「柱子 1」 → 「柱子 2」), no keys. @return the copies
+     */
+    public Items duplicate(Items it) {
+        Items out = new Items();
+        for (Lane7 l : it.lanes) out.lanes.add(copyLaneTo(l, l.g));
+        for (Group7 g : it.groups) out.groups.add(copyTree(g, g.p));
+        return out;
+    }
+
+    private Lane7 copyLaneTo(Lane7 l, int g) {
+        Lane7 c = copyLane(l);
+        c.id = nextLaneId();
+        c.g = g;
+        lanes.add(c);
+        String n = names.get(l.id);
+        if (n != null) names.put(c.id, fresh(n, false));
+        return c;
+    }
+
+    private Group7 copyTree(Group7 g, int parent) {
+        Group7 c = g.copy();
+        c.id = nextGroupId();
+        c.p = parent;
+        if (g.name != null) c.name = fresh(g.name, true);
+        groups.add(c);
+        for (Lane7 l : new ArrayList<>(lanes)) if (l.g == g.id) copyLaneTo(l, c.id);
+        for (Group7 h : new ArrayList<>(groups)) if (h.p == g.id && h != c) copyTree(h, c.id);
+        return c;
+    }
+
+    /** @return {@code name} with the next number no other lane (or group) is called: 「柱子 1」 → 「柱子 2」 */
+    String fresh(String name, boolean group) {
+        String stem = name.replaceAll("[0-9]+$", "");
+        if (stem.equals(name) || stem.trim().isEmpty()) stem = name + " ";
+        for (int i = 2; ; i++) {
+            String n = stem + i;
+            if (group ? groupCalled(n) == null : laneCalled(n, null) == null) return n;
+        }
+    }
+
+    /** @return {@code name} if no group is called that yet, else {@link #fresh} */
+    String freeGroupName(String name) {
+        return groupCalled(name) == null ? name : fresh(name, true);
+    }
+
+    private Group7 groupCalled(String name) {
+        for (Group7 g : groups) if (groupLabel(g).equals(name)) return g;
+        return null;
+    }
+
+    /** Moves {@code it} by (x, y, z) in the axes of the group they are in: lanes' origins, groups' centres. */
+    public static void move(Items it, float x, float y, float z) {
+        float[] by = {x, y, z};
+        for (Lane7 l : it.lanes) offset3(l.v.x, l.v.y, l.v.z, by, 1f);
+        for (Group7 g : it.groups) offset3(g.P.x, g.P.y, g.P.z, by, 1f);
+    }
+
+    /** @return why {@code it} cannot be turned ({@link #turn}): something in it moves or turns; null when it can */
+    public String cannotTurn(Items it) {
+        for (Lane7 l : it.lanes) {
+            for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z}) {
+                if (!f.segs.isEmpty()) return "轨道「" + laneLabel(l.id) + "」在移动或转向（原点、下落向量或法向量有分段），排不了一圈："
+                    + "先选中它按 Ctrl+G 成组，再阵列这个组";
+            }
+        }
+        for (Group7 g : it.groups) {
+            for (Fn f : new Fn[]{g.P.x, g.P.y, g.P.z, g.R.x, g.R.y, g.R.z}) {
+                if (!f.segs.isEmpty()) return "组「" + groupLabel(g) + "」在移动或转（位置或旋转有分段），排不了一圈："
+                    + "先选中它按 Ctrl+G 外面再套一个组，再阵列外面那个";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Turns {@code it} by m (rows, {@link #turnOf}) about point c, in the axes of the group they are in: lanes'
+     * origins, falls and normals, groups' centres and turns. Only for what {@link #cannotTurn} lets through.
+     */
+    public void turn(Items it, float[] m, float[] c) {
+        float[] a = new float[9], q = new float[3];
+        for (Lane7 l : it.lanes) {
+            l.axes(0f, a);
+            turnInto(m, l.v.x.constant - c[0], l.v.y.constant - c[1], l.v.z.constant - c[2], q);
+            setConst(l.v, q[0] + c[0], q[1] + c[1], q[2] + c[2]);
+            turnInto(m, l.u.x.constant, l.u.y.constant, l.u.z.constant, q);
+            setConst(l.u, q[0], q[1], q[2]);
+            turnInto(m, -a[6], -a[7], -a[8], q);                        // it faces where it faced: n = −depth
+            setConst(l.n, q[0], q[1], q[2]);
+        }
+        float[] both = new float[9];
+        for (Group7 g : it.groups) {
+            turnInto(m, g.P.x.constant - c[0], g.P.y.constant - c[1], g.P.z.constant - c[2], q);
+            setConst(g.P, q[0] + c[0], q[1] + c[1], q[2] + c[2]);
+            float[] r = turnOf(g.R.x.constant, g.R.y.constant, g.R.z.constant);
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    both[3 * i + j] = m[3 * i] * r[j] + m[3 * i + 1] * r[3 + j] + m[3 * i + 2] * r[6 + j];
+                }
+            }
+            euler(both, q);
+            setConst(g.R, q[0], q[1], q[2]);
+        }
+    }
+
+    /** @return the turn (rows) of degrees x, y and z as {@link Group7.Pose} makes it: about z, then x, then y */
+    public static float[] turnOf(float x, float y, float z) {
+        Group7 g = new Group7(0);
+        g.R.x.constant = x;
+        g.R.y.constant = y;
+        g.R.z.constant = z;
+        return new Group7.Pose(g, null).at(0f).m.clone();
+    }
+
+    /** Mirrors {@code it} left ↔ right (x → −x in the axes of the group they are in), everything in its groups too. */
+    public void mirror(Items it) {
+        for (Lane7 l : it.lanes) flip(l);
+        for (Group7 g : it.groups) flipTree(g);
+    }
+
+    private void flipTree(Group7 g) {
+        scale(g.P.x, -1f);
+        scale(g.R.y, -1f);                                              // x → −x: turns about y and z go the other way
+        scale(g.R.z, -1f);
+        for (Lane7 l : lanes) if (l.g == g.id) flip(l);
+        for (Group7 h : groups) if (h.p == g.id) flipTree(h);
+    }
+
+    private static void flip(Lane7 l) {
+        scale(l.v.x, -1f);
+        scale(l.u.x, -1f);
+        scale(l.n.x, -1f);
+    }
+
+    /** Moves group g's centre to c (its group's axes) and what is right in it the other way, so nothing moves. */
+    public void recentre(Group7 g, float[] c) {
+        float[] by = {g.P.x.constant - c[0], g.P.y.constant - c[1], g.P.z.constant - c[2]};
+        offset3(g.P.x, g.P.y, g.P.z, by, -1f);
+        for (Lane7 l : lanes) if (l.g == g.id) offset3(l.v.x, l.v.y, l.v.z, by, 1f);
+        for (Group7 h : groups) if (h.p == g.id) offset3(h.P.x, h.P.y, h.P.z, by, 1f);
+    }
+
+    /**
+     * 保存为模型 (Kelvin 2026-11-11 17:32「记得保存建模」): group {@code id} with everything in it (no keys) as a chart
+     * file of its own (format v7), in no group and its centre at 0 at beat {@code t}; lane names go along.
+     */
+    public String modelJson(int id, float t) {
+        Chart7 c = new Chart7();
+        for (Group7 g : groups) {
+            if (!within(g.id, id)) continue;
+            Group7 x = g.copy();
+            if (g.id == id) {
+                x.p = 0;
+                offset3(x.P.x, x.P.y, x.P.z, new float[]{g.P.x.at(t), g.P.y.at(t), g.P.z.at(t)}, -1f);
+            }
+            c.groups.add(x);
+        }
+        LinkedHashMap<String, Object> nm = new LinkedHashMap<>();
+        for (Lane7 l : lanes) {
+            if (!within(l.g, id)) continue;
+            c.lanes.add(copyLane(l));
+            String n = names.get(l.id);
+            if (n != null) nm.put(String.valueOf(l.id), n);
+        }
+        if (!nm.isEmpty()) c.editor.put("laneNames", nm);
+        ByteArrayOutputStream b = new ByteArrayOutputStream(1 << 12);
+        try {
+            ChartFormatV7.write(c, b);
+        } catch (IOException e) {
+            throw new IllegalStateException(e); // a byte stream does not throw
+        }
+        return new String(b.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 导入模型: the groups and lanes of model text {@code json} ({@link #modelJson}) added into group {@code parent}
+     * (0: the chart) with new ids, names numbered on when taken. @return what is right in parent from it
+     *
+     * @throws IOException when the text is not a chart file
+     */
+    public Items addModel(String json, int parent) throws IOException {
+        Doc m = of(ChartFormatV7.read(new java.io.ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))), null,
+            null);
+        java.util.HashMap<Integer, Integer> gid = new java.util.HashMap<>();
+        int ng = nextGroupId(), nl = nextLaneId();
+        for (Group7 g : m.groups) gid.put(g.id, ng++);
+        Items top = new Items();
+        for (Group7 g : m.groups) {
+            Integer up = g.p != 0 ? gid.get(g.p) : null;
+            g.id = gid.get(g.id);
+            g.p = up != null ? up : parent;
+            if (up == null) top.groups.add(g);
+            if (g.name != null) g.name = freeGroupName(g.name);
+            groups.add(g);
+        }
+        for (Lane7 l : m.lanes) {
+            String n = m.names.get(l.id);
+            Integer up = l.g != 0 ? gid.get(l.g) : null;
+            l.id = nl++;
+            l.g = up != null ? up : parent;
+            if (up == null) top.lanes.add(l);
+            lanes.add(l);
+            if (n != null) names.put(l.id, laneCalled(n, l) != null ? fresh(n, false) : n);
+        }
+        return top;
+    }
+
     /** @return the beat volume {@code v} comes in (its size from 0), NaN when it is there from the start */
     public static float appearBeat(Volume7 v) {
         Seg s = appearSeg(v.V.x);
@@ -862,6 +1378,7 @@ public final class Doc {
         for (Key7 k : c.keys) d.keys.add(new DKey(k));
         d.sortKeys();
         for (Volume7 v : c.volumes) d.vols.add(new DVol(v));
+        d.groups.addAll(c.groups);
         copyFn3(c.camera, d.camera);
         copyFn(c.fov, d.fov);
         if (c.editor != null) {
@@ -908,6 +1425,7 @@ public final class Doc {
         for (Lane7 l : lanes) c.lanes.add(copyLane(l));
         for (DKey k : keys) c.keys.add(copyKey(k.k));
         for (DVol v : vols) c.volumes.add(copyVol(v.v));
+        for (Group7 g : groups) c.groups.add(g.copy());
         copyFn3(camera, c.camera);
         copyFn(fov, c.fov);
         LinkedHashMap<String, Object> ed = new LinkedHashMap<>();

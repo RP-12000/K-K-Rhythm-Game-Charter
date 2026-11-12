@@ -122,7 +122,7 @@ final class StatsPanel {
         ry += 36f;
         g.text("函数分段", l, ry, 12, Gfx.INK3);
         g.text("数量", c3, ry, 12, Gfx.INK3, 2);
-        String[] names = {"轨道（u v 宽 长 S s F f）", "键（h H）", "镜头 P", "漩涡 / 水帘（V p）"};
+        String[] names = {"轨道（u n v 宽 长 S s F f o 水雷 l）", "键（h H）", "镜头 P", "漩涡 / 水帘（V p）"};
         int total = 0;
         for (int k = 0; k < names.length; k++) {
             ry += 22f;

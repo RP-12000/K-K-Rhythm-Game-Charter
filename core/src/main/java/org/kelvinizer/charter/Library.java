@@ -16,6 +16,7 @@ import org.kelvinizer.elements.ChartMapper;
 import org.kelvinizer.elements.Chart7;
 import org.kelvinizer.elements.ChartFormatV7;
 import org.kelvinizer.elements.ChartV7Convert;
+import org.kelvinizer.elements.Lane7;
 import org.kelvinizer.elements.Seg;
 import org.kelvinizer.elements.SongInfo;
 import org.kelvinizer.library.ChartHeaderReader;
@@ -205,6 +206,7 @@ public final class Library {
         } catch (Exception ignored) {
         }
         Gdx.app.log("Charter", "charts folder: " + dir.getPath());
+        trimBackups(home.child("backups"), MAX_BACKUPS);              // also the ones other tools left
         return new Library(Gdx.files.absolute(dir.getPath()), home);
     }
 
@@ -578,11 +580,59 @@ public final class Library {
         if (f == null || !f.exists() || !backedUp.add(f.path())) return false;
         try {
             f.copyTo(home.child("backups").child(s.id).child(f.nameWithoutExtension() + "-" + stamp() + ".json"));
+            trimBackups(home.child("backups"), MAX_BACKUPS);
             return true;
         } catch (Exception e) {
             Gdx.app.error("Charter", "backup failed: " + e.getMessage());
             return false;
         }
+    }
+
+    /** At most this many backups stay (Kelvin 2026-11-12 06:52「我建议备份数量超过100个自动清理」). */
+    public static final int MAX_BACKUPS = 100;
+
+    /** A backup's name: chart, date, time (HHmm or HHmmss), then anything ("-before-red75"). */
+    private static final java.util.regex.Pattern STAMPED =
+        java.util.regex.Pattern.compile("(.*?)-(\\d{8})-(\\d{4}(?:\\d{2})?)(?:\\D.*)?");
+
+    /**
+     * Deletes the oldest backups while there are more than {@code max}. Backups are the files in the song folders
+     * of {@code backups}; autosave is not counted and never deleted, and each chart keeps at least its newest
+     * backup. A chart's 迭代次数 is kept in the chart file itself, so it does not change (Kelvin 06:52「迭代次数
+     * 那个还是不变，每次加一」). Oldest = by the date in the name, else by when the file was written.
+     * @return how many were deleted
+     */
+    public static int trimBackups(FileHandle backups, int max) {
+        ArrayList<FileHandle> all = new ArrayList<>();
+        HashMap<String, FileHandle> newest = new HashMap<>();
+        for (FileHandle song : backups.list()) {
+            if (!song.isDirectory() || song.name().equals("autosave")) continue;
+            for (FileHandle f : song.list(".json")) {
+                all.add(f);
+                java.util.regex.Matcher m = STAMPED.matcher(f.nameWithoutExtension());
+                String key = song.name() + "/" + (m.matches() ? m.group(1) : f.name());
+                FileHandle n = newest.get(key);
+                if (n == null || when(f).compareTo(when(n)) > 0) newest.put(key, f);
+            }
+        }
+        if (all.size() <= max) return 0;
+        HashSet<String> keep = new HashSet<>();
+        for (FileHandle f : newest.values()) keep.add(f.path());
+        all.sort((a, b) -> when(a).compareTo(when(b)));
+        int gone = 0;
+        for (FileHandle f : all) {
+            if (all.size() - gone <= max) break;
+            if (!keep.contains(f.path()) && f.delete()) gone++;
+        }
+        if (gone > 0) Gdx.app.log("Charter", "backups over " + max + ": deleted the oldest " + gone);
+        return gone;
+    }
+
+    /** @return when a backup was made, as yyyyMMddHHmmss: from its name when it has a date, else its file time */
+    private static String when(FileHandle f) {
+        java.util.regex.Matcher m = STAMPED.matcher(f.nameWithoutExtension());
+        if (m.matches()) return m.group(2) + (m.group(3).length() == 4 ? m.group(3) + "00" : m.group(3));
+        return new SimpleDateFormat("yyyyMMddHHmmss", Locale.ROOT).format(new Date(f.lastModified()));
     }
 
     /** A chart file read for editing: the document and a note about how it was read (null = as it was). */
@@ -609,6 +659,11 @@ public final class Library {
         return convertOld(f, bytes, song, d);
     }
 
+    /** @return the chart version files are saved as, the {@code "format"} they write: "2.1" (Kelvin 2026-11-11 04:19) */
+    static String version() {
+        return ChartFormatV7.VERSION;
+    }
+
     /**
      * An older chart (format 1 to 6) as a v7 document: the game's converter does the work, so the editor opens it
      * as the game plays it. Saving writes it as v7.
@@ -616,6 +671,7 @@ public final class Library {
     private Read convertOld(FileHandle f, byte[] bytes, SongInfo song, Difficulty d) throws Exception {
         Chart old = ChartMapper.readOld(f);
         Doc doc = Doc.of(ChartV7Convert.convert(old), song, d.label());
+        int carriers = nameCarriers(doc);
         if (song == null) {                                         // formats 1–4 carry their own song values
             doc.title = nz(old.title());
             doc.artist = nz(old.artist());
@@ -630,8 +686,25 @@ public final class Library {
             if (doc.bpms.isEmpty() || doc.bpms.get(0).beat > 0f) doc.bpms.add(0, new Doc.Tempo(0f, old.bpm()));
         }
         if (doc.charter.isEmpty() && old.charter() != null) doc.charter = old.charter();
-        return new Read(doc, "这张谱是旧格式 v" + old.sourceFormat() + "，已按游戏的方法转成谱面版本 2.0（海面等 2.0 没有的东西去掉了）。"
-            + "保存时写成 2.0，原文件先备份。");
+        String ver = version();
+        return new Read(doc, "这张谱是旧格式 v" + old.sourceFormat() + "，已按游戏的方法转成谱面版本 " + ver + "（海面等 " + ver
+            + " 没有的东西去掉了" + (carriers > 0 ? "；键自己的横移和旋转放在 " + carriers + " 条不画出来的「载体」轨道上" : "") + "）。");
+    }
+
+    /**
+     * Names the lanes the game's converter adds for keys that shift or turn on their own (7.238, Kelvin 2026-11-11
+     * 02:27 自动复现) 「载体 1」「载体 2」…: they come after the chart's own lanes and draw nothing of their own ({@code l} 0).
+     * @return how many there are
+     */
+    private static int nameCarriers(Doc doc) {
+        int top = Integer.MIN_VALUE, n = 0;
+        for (Lane7 l : doc.lanes) if (!bare(l)) top = Math.max(top, l.id);
+        for (Lane7 l : doc.lanes) if (bare(l) && l.id > top) doc.names.put(l.id, "载体 " + ++n);
+        return n;
+    }
+
+    private static boolean bare(Lane7 l) {
+        return l.l.segs.isEmpty() && l.l.constant == 0f;
     }
 
     private static String nz(String s) {
@@ -730,6 +803,55 @@ public final class Library {
             Gdx.app.error("Charter", CURVES + ": " + e.getMessage());
             return false;
         }
+    }
+
+    // ================================================================== 模型 (场景页)
+
+    /**
+     * 保存的模型（Kelvin 2026-11-11 17:32「记得保存建模，以及后面可以导入建模」）：Charter 文件夹 models 里一个组一个文件，所有谱都能导入。
+     * Saved models: one group per file under the Charter folder's models, chart files of their own (format v7).
+     */
+    private static final String MODELS = "models";
+    private ArrayList<String> models;
+
+    /** @return the saved models' names, sorted (models/*.json, listed once) */
+    public List<String> models() {
+        if (models != null) return models;
+        models = new ArrayList<>();
+        FileHandle dir = home.child(MODELS);
+        if (dir.isDirectory()) for (FileHandle f : dir.list(".json")) models.add(f.nameWithoutExtension());
+        models.sort(String::compareTo);
+        return models;
+    }
+
+    /** @return model {@code name}'s text, null when it cannot be read */
+    public String model(String name) {
+        try {
+            return home.child(MODELS).child(name + ".json").readString("UTF-8");
+        } catch (Exception e) {
+            Gdx.app.error("Charter", MODELS + "/" + name + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** @return {@code name} as a file name: the characters Windows does not take become _ */
+    public static String modelName(String name) {
+        return name.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    /** Saves model {@code name} ({@link #modelName}; one of that name is replaced). @return false when not written */
+    public boolean saveModel(String name, String json) {
+        try {
+            home.child(MODELS).child(name + ".json").writeString(json, false, "UTF-8");
+        } catch (Exception e) {
+            Gdx.app.error("Charter", MODELS + "/" + name + ": " + e.getMessage());
+            return false;
+        }
+        if (!models().contains(name)) {
+            models.add(name);
+            models.sort(String::compareTo);
+        }
+        return true;
     }
 
     /** Writes a crash-safety copy of unsaved work (backups/autosave). */

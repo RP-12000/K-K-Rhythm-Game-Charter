@@ -7,6 +7,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import org.kelvinizer.elements.Fn;
 import org.kelvinizer.elements.Fn3;
+import org.kelvinizer.elements.Group7;
 import org.kelvinizer.elements.Key7;
 import org.kelvinizer.elements.KeyKind;
 import org.kelvinizer.elements.Lane7;
@@ -18,6 +19,7 @@ import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.ui.Theme;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 
@@ -34,33 +36,86 @@ import java.util.Locale;
 final class EditorScreen implements CharterApp.View {
     // ---- layout (top-left based on the 1920 × 1080 canvas, or the tablet's 1344 × 840)
     private static final boolean TAB = Gfx.TABLET;
-    /** The preview: the game's 16 : 10 reference frame (1920 × 1200) at scale {@link #K}. */
-    static final float PH = TAB ? 465f : 801f, PW = PH * 1.6f, PX = TAB ? 72f : 92f, PY = TAB ? 64f : 68f,
-        K = PW / 1920f;
-    /** The timeline and status bar end at {@link #TR}, where the inspector starts. */
-    static final float TX = TAB ? 136f : 150f, TR = Math.round(PX + PW) + (TAB ? 10f : 28f), TW = TR - TX,
-        TL_TOP = TAB ? 589f : 882f, TL_BOTTOM = TAB ? 836f : 1052f;
-    static final float R_AUDIO = TL_TOP + 4f, R_UP = R_AUDIO + 34f, R_UP_H = TAB ? 64f : 38f,
-        R_LOW = R_UP + R_UP_H + 4f, R_LOW_H = TAB ? 68f : 42f;
-    static final float R_FIELD = R_LOW + R_LOW_H + 2f, R_FIELD_H = TAB ? 34f : 22f, R_RULER = R_FIELD + R_FIELD_H + 2f;
+    /** The preview at its biggest (the timeline then as short as it gets): the game's 16 : 10 frame (1920 × 1200). */
+    private static final float PH_MAX = TAB ? 465f : 801f, PW_MAX = PH_MAX * 1.6f, PX0 = TAB ? 72f : 92f;
+    static final float PY = TAB ? 64f : 68f;
+    /**
+     * The timeline: its names end at {@link #TX}; it and the status bar end at {@link #TR}, where the inspector
+     * starts.
+     */
+    static final float TX = TAB ? 260f : 330f, TR = Math.round(PX0 + PW_MAX) + (TAB ? 10f : 28f), TW = TR - TX,
+        TL_BOTTOM = TAB ? 836f : 1052f;
+    /** Between the preview and the timeline: a gap, on a tablet with the touch bar in it. */
+    private static final float UNDER_PV = TAB ? 60f : 13f;
+    /**
+     * Where the line between the preview and the timeline can be dragged (Kelvin 2026-11-11 16:15「我要它有点像3D动画制作
+     * 的那种」, SPEC §2): from a preview 360 (tablet 200) tall to the biggest one; at first as in the mockup.
+     */
+    private static final float TOP_MIN = PY + (TAB ? 200f : 360f) + UNDER_PV, TOP_MAX = PY + PH_MAX + UNDER_PV,
+        TOP_FIRST = TAB ? TOP_MAX : 760f;
+    /** The timeline's ruler and 音频 strip, above its rows ({@link Layers}). */
+    static final float RULER_H = TAB ? 30f : 20f, AUDIO_H = TAB ? 34f : 30f;
+    /**
+     * The preview now: as tall as the line leaves room for, 16 : 10, at the left of its column (Kelvin 2026-11-11 21:10
+     * 「16：10好像会导致中间显示区域有留白。把其中一些元素挪过去」: the room left over is one strip on its right), at scale K.
+     */
+    static float PH, PW, PX, K;
+    /** The timeline's top (the line), its ruler, its 音频 strip and its rows (总览 first). */
+    static float TL_TOP, R_RULER, R_AUDIO, R_ROWS;
     /** The tablet's touch bar under the preview (undo, copy, delete, …: what the keyboard does on the desktop). */
-    private static final float AB_Y = PY + PH + 8f, AB_H = 44f;
+    private static float AB_Y;
+    private static final float AB_H = 44f;
     /** Hit distances grow this much for a finger. */
-    private static final float TOUCH = TAB ? 2.5f : 1f;
+    static final float TOUCH = TAB ? 2.5f : 1f;
     /** 统计: in the status bar, or at the end of the tablet's touch bar. */
-    private static final float SB_X = TAB ? TR - 66f : TR - 64f, SB_Y = TAB ? AB_Y : TL_BOTTOM + 4f,
-        SB_W = 56f, SB_H = TAB ? AB_H : 20f;
+    private static final float SB_X = TAB ? TR - 66f : TR - 64f, SB_W = 56f, SB_H = TAB ? AB_H : 20f;
+    private static float SB_Y;
+
+    static {
+        layout(TOP_FIRST);
+    }
+
+    /** Lays the preview and the timeline out around the line at {@code top} (kept where it can go). */
+    static void layout(float top) {
+        TL_TOP = Math.round(Math.max(TOP_MIN, Math.min(TOP_MAX, top)));
+        PH = TL_TOP - UNDER_PV - PY;
+        PW = PH * 1.6f;
+        PX = PX0;
+        K = PW / 1920f;
+        AB_Y = PY + PH + 8f;
+        SB_Y = TAB ? AB_Y : TL_BOTTOM + 4f;
+        float sx = PX + PW, sw = TR - sx, both = CUBE_BOX + 8f + PV_BTN_W;
+        SIDE = sw >= Math.max(CUBE_BOX, PV_BTN_W) + 24f;
+        if (!SIDE) {                                                    // too narrow: over the preview's top right
+            PV_COL_X = PX + PW - 12f - PV_BTN_W;
+            CUBE_X = PV_COL_X - 8f - CUBE_BOX;
+            PV_COL_Y = CUBE_Y = PY + 12f;
+        } else if (sw >= both + 24f) {                                  // the cube, then the buttons beside it
+            CUBE_X = sx + (sw - both) * 0.5f;
+            PV_COL_X = CUBE_X + CUBE_BOX + 8f;
+            PV_COL_Y = CUBE_Y = PY;
+        } else {                                                        // the cube over the buttons
+            CUBE_X = sx + (sw - CUBE_BOX) * 0.5f;
+            PV_COL_X = sx + (sw - PV_BTN_W) * 0.5f;
+            CUBE_Y = PY;
+            PV_COL_Y = PY + CUBE_BOX + 40f;
+        }
+        R_RULER = TL_TOP + 6f;
+        R_AUDIO = R_RULER + RULER_H + 2f;
+        R_ROWS = R_AUDIO + AUDIO_H + 2f;
+    }
 
     /**
-     * Tools: select (N), the eight key kinds (keys 1–8), 漩涡 (9) and 水帘 (0); Drag (G) sits under 水流 on the rail.
+     * Tools: select (N), the eight key kinds (keys 1–8), 漩涡 (9) and 水帘 (0); Drag (G) sits under 水流 on the rail;
+     * 方块 (B) is the 场景 page's ({@link SceneTools}).
      */
     static final int T_SELECT = 0, T_TAP = 1, T_HOLD = 2, T_MINE = 3, T_LMINE = 4, T_TIDE = 5, T_TSTREAM = 6,
-        T_TMINE = 7, T_TSMINE = 8, T_VEIL = 9, T_CURTAIN = 10, T_DRAG = 11;
+        T_TMINE = 7, T_TSMINE = 8, T_VEIL = 9, T_CURTAIN = 10, T_DRAG = 11, T_BOX = 12;
     private static final String[] TOOL_NAMES = {"选择", "水滴", "水流", "水雷", "轨道水雷", "浪花", "潮汐", "浪花水雷",
         "潮汐水雷", "漩涡", "水帘", "Drag"};
     private static final String[] TOOL_KEYS = {"N", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "G"};
     /** The key kind each key tool places. */
-    private static final KeyKind[] TOOL_KIND = {null, KeyKind.TAP, KeyKind.STREAM, KeyKind.MINE, KeyKind.STREAM_MINE,
+    static final KeyKind[] TOOL_KIND = {null, KeyKind.TAP, KeyKind.STREAM, KeyKind.MINE, KeyKind.STREAM_MINE,
         KeyKind.WAVE, KeyKind.TIDE, KeyKind.WAVE_MINE, KeyKind.TIDE_MINE, null, null, KeyKind.DRAG};
     /** The rail from the top: the tools in this order, at these heights (a gap before 水滴 and before 漩涡). */
     private static final int[] TOOL_ORDER = {T_SELECT, T_TAP, T_HOLD, T_DRAG, T_MINE, T_LMINE, T_TIDE, T_TSTREAM,
@@ -75,7 +130,8 @@ final class EditorScreen implements CharterApp.View {
     private static final Color UP_INK = Gfx.c(0xE6ECFF);
     private static final float AUTOSAVE_S = 120f;
     /** How thick a key is drawn along its lane, and how long a new long key is when it was not dragged out (beats). */
-    private static final float KEY_T = 30f, LONG_DEFAULT = 1f;
+    private static final float KEY_T = 30f;
+    static final float LONG_DEFAULT = 1f;
     /** A new veil or curtain lasts this many beats. */
     private static final float VOL_BEATS = 4f;
 
@@ -101,6 +157,12 @@ final class EditorScreen implements CharterApp.View {
     final Inspector insp;
     /** 曲线窗口: the open function's segments, in place of the timeline's rows. */
     final CurvePanel curves;
+    /** The timeline's layers and rows (Kelvin 2026-11-11 16:39). */
+    final Layers layers;
+    /** The 场景 page's tools: 方块, 阵列, 镜像, the handle, the grid, models. */
+    final SceneTools scene;
+    /** The line between the preview and the timeline is being dragged. */
+    private boolean splitting;
     /** The editor's 3D view of the chart this frame. */
     final Scene sc = new Scene();
     int tool = T_SELECT;
@@ -118,6 +180,15 @@ final class EditorScreen implements CharterApp.View {
     float orbitZoom = 1f;
     /** 六个基本朝向 (Kelvin 2026-11-09 04:54): the edit view from the front, back, left, right, above or below; −1 none. */
     int viewPreset = -1;
+    /**
+     * The edit view's own move (Kelvin 2026-11-10 20:26「ctrl+alt+箭头可以前后左右移动camera位置」): right, up and
+     * forward along the view, reference units, after the turn; what it looks at goes along, so the view keeps its
+     * direction. Ctrl+Alt + ← → / PageUp PageDown / ↑ ↓, Shift a longer step, as the chart notes' preview. Not saved.
+     */
+    final float[] viewMove = new float[3];
+    static final float MOVE_STEP = 400f, MOVE_FAR = 2000f;
+    private static final int[] MOVE_KEYS = {Input.Keys.RIGHT, Input.Keys.LEFT, Input.Keys.PAGE_UP,
+        Input.Keys.PAGE_DOWN, Input.Keys.UP, Input.Keys.DOWN};
     private float orbitX, orbitY;
     private boolean altPress, turning, twoTurning;
     static final float ORBIT_DEG = 0.25f;
@@ -134,7 +205,7 @@ final class EditorScreen implements CharterApp.View {
      */
     boolean laneIds;
     private final Color fakeInk = new Color();
-    private static final Color AX_X = Gfx.c(0xFF6B81), AX_Y = Gfx.c(0x7BE0A0), AX_Z = Gfx.c(0x6FB8FF);
+    static final Color AX_X = Gfx.c(0xFF6B81), AX_Y = Gfx.c(0x7BE0A0), AX_Z = Gfx.c(0x6FB8FF);
     /** Preview sync hint, in the order of the game's Settings.syncHint values. */
     static final String[] SYNC_LABELS = {"sync：高亮", "sync：增强", "sync：关"};
     static final float PV_BTN_W = 118f, PV_BTN_GAP = 6f;
@@ -144,10 +215,13 @@ final class EditorScreen implements CharterApp.View {
      */
     static final float CUBE_BOX = 124f, CUBE_HALF = 34f, CUBE_BEVEL = 0.26f;
     /**
-     * The preview's top right: the button column (实机, 镜头节点, sync, 坐标系, 假键) at the edge, the view cube left of it
-     * (Kelvin 2026-11-10 02:15「右上角的那些实机那一列5个按钮和那个立方体的位置交换」).
+     * The button column (实机, 镜头节点, sync, 坐标系, 假键, 名称) and the view cube left of it (Kelvin 2026-11-10 02:15
+     * 「右上角的那些实机那一列5个按钮和那个立方体的位置交换」): in the strip right of the preview ({@link #SIDE}; the
+     * cube over the buttons when the strip is too narrow for both side by side, the preview's 拍 and 视角 under them),
+     * else over the preview's top right as before (the strip too narrow even for one).
      */
-    static final float PV_COL_X = PX + PW - 12f - PV_BTN_W, CUBE_X = PV_COL_X - 8f - CUBE_BOX;
+    static float PV_COL_X, PV_COL_Y, CUBE_X, CUBE_Y;
+    static boolean SIDE;
     private static final String[] CUBE_LABELS = {"前", "后", "左", "右", "上", "下"};
     private final float[] cubePts = new float[8];
     private final double[] cubeW = new double[3];
@@ -175,7 +249,7 @@ final class EditorScreen implements CharterApp.View {
     // ---- drag state
     private static final int D_NONE = 0, D_PLACE = 1, D_PRESS_KEY = 2, D_MOVE_KEY = 3, D_LENGTH = 4, D_SEEK = 5,
         D_BOX = 6, D_TL_PRESS = 7, D_TL_MOVE = 8, D_PAN = 9, D_PV_START = 10, D_PV_END = 11, D_LANE = 12, D_VOL = 13,
-        D_ORBIT = 14;
+        D_ORBIT = 14, D_GROUP = 15;
     private int drag;
     private boolean dMarked;
     /** Audio-row grab: playhead and view at the press, whether it moved, whether it was playing. */
@@ -192,10 +266,15 @@ final class EditorScreen implements CharterApp.View {
     private int dId;
     private final double[] dGrab = new double[3];
     private final float[] dAt0 = new float[3];
+    /** What a lane or volume drag moves from (a grouped lane's origin in its group's axes), and that group's pose. */
+    private final float[] dV0 = new float[3];
+    private Group7.Pose dPose;
+    /** The last press on the preview (a second one soon after, near it: a double click), and the picks last seen. */
+    long lastPress;
+    private float lastPressX, lastPressY;
+    private int seenLaneSel = Session.NO_LANE, seenGroupSel;
+    private static final long DOUBLE_MS = 400L;
     private boolean dUnpick;
-    /** Function bars of this frame in the timeline: {x0, x1} and the function's id. */
-    private final ArrayList<float[]> bars = new ArrayList<>();
-    private final ArrayList<String> barIds = new ArrayList<>();
 
     EditorScreen(CharterApp app, Session s) {
         this.app = app;
@@ -210,6 +289,8 @@ final class EditorScreen implements CharterApp.View {
         pv = app.preview;
         insp = new Inspector(this);
         curves = new CurvePanel(this);
+        layers = new Layers(this);
+        scene = new SceneTools(this);
         insp.tab = Inspector.NOTE;
     }
 
@@ -273,6 +354,7 @@ final class EditorScreen implements CharterApp.View {
         pv.setLive(!overlays, s.diff);
         pv.seek(pos, dt, pb.playing());
         follow();
+        syncPicks();
         keys();
         diskCheckT += dt;
         if (diskCheckT >= 1f && !im.modalOpen()) {
@@ -328,6 +410,27 @@ final class EditorScreen implements CharterApp.View {
         else if (!s.lib.setPreview(s.song, a, b, s::beatToMs)) im.toast("song.json 写不进去");
     }
 
+    /** Ctrl+Alt + an arrow or PageUp / PageDown moves the edit view ({@link #viewMove}); 0 归位. @return taken */
+    private boolean moveView() {
+        for (int i = 0; i < MOVE_KEYS.length; i++) {
+            if (!im.key(MOVE_KEYS[i])) continue;
+            float st = im.shift ? MOVE_FAR : MOVE_STEP;
+            viewMove[i / 2] += i % 2 == 0 ? st : -st;
+            return true;
+        }
+        if (!im.key(Input.Keys.NUM_0) && !im.key(Input.Keys.NUMPAD_0)) return false;
+        homeView();
+        return true;
+    }
+
+    /** 归位: the edit view back to the chart's camera (no turn, zoom, plain view or move). */
+    void homeView() {
+        orbitYaw = orbitPitch = 0f;
+        orbitZoom = 1f;
+        viewPreset = -1;
+        Arrays.fill(viewMove, 0f);
+    }
+
     /** Keeps the playhead inside the timeline view. */
     private void follow() {
         if (pb.playing() && beat > tlStart + tlSpan * 0.85) tlStart = beat - tlSpan * 0.15;
@@ -337,6 +440,7 @@ final class EditorScreen implements CharterApp.View {
     private void keys() {
         if (im.modalOpen() || im.textFocus()) return;
         if (im.ctrl) {
+            if (im.alt && overlays && moveView()) return;
             if (im.key(Input.Keys.S)) save(null);
             else if (im.key(Input.Keys.Z)) {
                 if (im.shift) redo();
@@ -346,18 +450,23 @@ final class EditorScreen implements CharterApp.View {
             else if (im.key(Input.Keys.X)) copy(true);
             else if (im.key(Input.Keys.V)) paste();
             else if (im.key(Input.Keys.A)) selectAll();
+            else if (im.key(Input.Keys.G)) makeGroup();
+            else if (im.key(Input.Keys.D) && insp.tab == Inspector.SCENE) scene.duplicate();
             else if (!im.alt && im.key(Input.Keys.UP)) toFace(true);
             else if (!im.alt && im.key(Input.Keys.DOWN)) toFace(false);
             return;
         }
         if (im.key(Input.Keys.SPACE)) pb.toggle();
-        if (im.key(Input.Keys.N)) setTool(tool == T_SELECT ? lastTool : T_SELECT);
+        if (im.key(Input.Keys.N)) setTool(tool != T_SELECT ? T_SELECT : insp.tab == Inspector.SCENE ? T_BOX : lastTool);
+        if (im.key(Input.Keys.B)) setTool(T_BOX);
+        if (scene.arrayOn && (im.key(Input.Keys.ENTER) || im.key(Input.Keys.NUMPAD_ENTER))) scene.applyArray();
         for (int t = T_TAP; t <= T_VEIL; t++) {
             if (im.key(Input.Keys.NUM_0 + t) || im.key(Input.Keys.NUMPAD_0 + t)) setTool(t);
         }
         if (im.key(Input.Keys.NUM_0) || im.key(Input.Keys.NUMPAD_0)) setTool(T_CURTAIN);
         if (im.key(Input.Keys.G)) setTool(T_DRAG);
         if (im.key(Input.Keys.TAB)) s.placeSky = !s.placeSky;
+        if (im.key(Input.Keys.K)) keyframe();
         if (im.key(Input.Keys.FORWARD_DEL) || im.key(Input.Keys.DEL)) {
             if (curves.on && curves.focus && curves.deleteKey()) return;
             if (insp.tab == Inspector.VOLUME && s.volSel != 0) deleteVol();
@@ -368,9 +477,12 @@ final class EditorScreen implements CharterApp.View {
             else mirror();
         }
         if (im.key(Input.Keys.D)) insp.applyFall(s, s.selected(), 0);
-        if (im.key(Input.Keys.ESCAPE) && statsOpen) statsOpen = false;
+        if (im.key(Input.Keys.ESCAPE) && scene.arrayOn) scene.arrayOn = false;
+        else if (im.key(Input.Keys.ESCAPE) && layers.stripOn()) layers.closeStrip();
+        else if (im.key(Input.Keys.ESCAPE) && statsOpen) statsOpen = false;
         else if (im.key(Input.Keys.ESCAPE) && !im.popupOpen()) {
             if (!s.sel.isEmpty()) s.sel.clear();
+            else if (s.groupIn != 0) leaveGroup();
             else tool = T_SELECT;
         }
         if (im.alt) {                                               // Alt+← →: the selected keys a lane across
@@ -387,9 +499,11 @@ final class EditorScreen implements CharterApp.View {
     }
 
     void setTool(int t) {
-        if (t != T_SELECT) lastTool = t;
+        if (t != T_SELECT && t != T_BOX) lastTool = t;
         tool = t;
         if (t == T_VEIL || t == T_CURTAIN) insp.tab = Inspector.VOLUME;
+        else if (t == T_BOX) insp.tab = Inspector.SCENE;
+        else if (t != T_SELECT && insp.tab == Inspector.SCENE) insp.tab = Inspector.NOTE;     // where key tools are
     }
 
     /** Writes the crash-safety copy now (the app goes to the background, where Android may close it). */
@@ -398,7 +512,7 @@ final class EditorScreen implements CharterApp.View {
     }
 
     /** Ctrl or Shift held, or the tablet's 多选 on: a click adds to the selection. */
-    private boolean adding() {
+    boolean adding() {
         return im.shift || im.ctrl || multi;
     }
 
@@ -587,6 +701,7 @@ final class EditorScreen implements CharterApp.View {
         boolean right = d.addsRight(at);
         Lane7 l = Doc.copyLane(src);
         l.id = d.nextLaneId();
+        l.g = 0;                                                        // the outer end is in the chart's axes
         for (Fn f : Doc.fns(l)) Doc.shift(f, by);
         Doc.offset(l.v.x, d.outerX(right, at) - Doc.xAt(l, at));
         if (right) d.lanes.add(l);
@@ -615,6 +730,166 @@ final class EditorScreen implements CharterApp.View {
         insp.tab = Inspector.LANE;
         s.changed(false);
         im.toast("已粘贴轨道「" + d.laneLabel(l.id) + "」和上面的 " + keys + " 个键");
+    }
+
+    // ================================================================== groups (组, chart 2.1)
+
+    /**
+     * Keeps the 成组 picks with what is picked: a lane or group picked some other way (its card, the timeline, the
+     * checks) is then picked alone.
+     */
+    private void syncPicks() {
+        Doc d = s.doc;
+        if (d.group(s.groupSel) == null) s.groupSel = 0;
+        if (d.group(s.groupIn) == null) s.groupIn = 0;
+        if (s.laneSel != seenLaneSel && s.laneSel != Session.NO_LANE && !s.pickLanes.contains(s.laneSel)) {
+            s.pickLanes.clear();
+            s.pickGroups.clear();
+            s.groupSel = 0;
+            s.pickLanes.add(s.laneSel);
+        } else if (s.groupSel != seenGroupSel && s.groupSel != 0 && !s.pickGroups.contains(s.groupSel)) {
+            s.pickLanes.clear();
+            s.pickGroups.clear();
+            s.laneSel = Session.NO_LANE;
+            s.pickGroups.add(s.groupSel);
+        }
+        if (s.laneSel == Session.NO_LANE && s.groupSel == 0) {
+            s.pickLanes.clear();
+            s.pickGroups.clear();
+        }
+        seenLaneSel = s.laneSel;
+        seenGroupSel = s.groupSel;
+    }
+
+    /** Picks lane {@code id} (its card); {@code add}: one more for 成组, again: one less. */
+    void pickLane(int id, boolean add) {
+        if (!add) {
+            s.pickLanes.clear();
+            s.pickGroups.clear();
+            s.groupSel = 0;
+        }
+        if (add && s.pickLanes.remove(id)) {
+            s.laneSel = Session.NO_LANE;
+            for (int x : s.pickLanes) s.laneSel = x;                    // the last one left
+        } else {
+            s.pickLanes.add(id);
+            s.laneSel = id;
+        }
+        seenLaneSel = s.laneSel;
+        seenGroupSel = s.groupSel;
+        if (insp.tab != Inspector.SCENE) insp.tab = Inspector.LANE;     // on the 场景 page its card shows there
+    }
+
+    /** Picks group {@code id} (its card on the 场景 page); {@code add}: one more for 成组, again: one less. */
+    void pickGroup(int id, boolean add) {
+        if (!add) {
+            s.pickLanes.clear();
+            s.pickGroups.clear();
+            s.laneSel = Session.NO_LANE;
+        }
+        if (add && s.pickGroups.remove(id)) {
+            s.groupSel = 0;
+            for (int x : s.pickGroups) s.groupSel = x;
+        } else {
+            s.pickGroups.add(id);
+            s.groupSel = id;
+        }
+        seenLaneSel = s.laneSel;
+        seenGroupSel = s.groupSel;
+        insp.tab = Inspector.SCENE;
+    }
+
+    /** @return whether a lane in group g (0: none) is in a picked group */
+    private boolean pickedGroup(int g) {
+        if (g == 0) return false;
+        Doc d = s.doc;
+        if (s.groupSel != 0 && d.within(g, s.groupSel)) return true;
+        for (int id : s.pickGroups) if (d.within(g, id)) return true;
+        return false;
+    }
+
+    /** 进组: a click then picks what is right in group {@code id} one by one (Esc: out again). */
+    void enterGroup(int id) {
+        Group7 gr = s.doc.group(id);
+        if (gr == null) return;
+        s.groupIn = id;
+        im.toast("已进组「" + Doc.groupLabel(gr) + "」：点一下是里面的单条轨道（Esc 出组）");
+    }
+
+    /** 出组: up out of the entered group, which stays picked. */
+    void leaveGroup() {
+        int was = s.groupIn;
+        s.groupIn = s.doc.parentOf(was);
+        if (s.doc.group(was) != null) pickGroup(was, false);
+    }
+
+    /**
+     * 成组 (Ctrl+G, Kelvin 2026-11-11 17:32): the picked lanes and groups (all right in one group, or none) become a new
+     * group there, its centre among them; it is picked.
+     */
+    void makeGroup() {
+        Doc d = s.doc;
+        ArrayList<Lane7> ls = new ArrayList<>();
+        ArrayList<Group7> gs = new ArrayList<>();
+        for (int id : s.pickLanes) if (d.lane(id) != null) ls.add(d.lane(id));
+        for (int id : s.pickGroups) if (d.group(id) != null) gs.add(d.group(id));
+        if (ls.isEmpty() && gs.isEmpty()) {
+            if (d.lane(s.laneSel) != null) ls.add(d.lane(s.laneSel));
+            if (d.group(s.groupSel) != null) gs.add(d.group(s.groupSel));
+        }
+        if (ls.isEmpty() && gs.isEmpty()) {
+            im.toast("先选中轨道或组（按住 Shift 点可以选几个），再按 Ctrl+G 成组");
+            return;
+        }
+        int parent = !ls.isEmpty() ? (d.group(ls.get(0).g) != null ? ls.get(0).g : 0) : d.parentOf(gs.get(0).id);
+        boolean one = true;
+        for (Lane7 l : ls) one &= (d.group(l.g) != null ? l.g : 0) == parent;
+        for (Group7 gr : gs) one &= d.parentOf(gr.id) == parent;
+        if (!one) {
+            im.toast("选中的轨道和组不在同一个组里，成不了组（先进到同一个组里再选）");
+            return;
+        }
+        s.mark();
+        Group7 gr = d.makeGroup(ls, gs, parent, snap(beat));
+        s.changed(false);
+        pickGroup(gr.id, false);
+        im.toast("已成组「" + Doc.groupLabel(gr) + "」：" + ls.size() + " 条轨道" + (gs.isEmpty() ? "" : "、" + gs.size() + " 个组")
+            + "（中心在它们中间）");
+    }
+
+    /** 解组: group {@code id}'s lanes and groups go into the group it is in, where they are; or why it cannot. */
+    void ungroup(int id) {
+        Doc d = s.doc;
+        Group7 gr = d.group(id);
+        if (gr == null) return;
+        String why = d.copy().ungroup(id);                              // try it on a copy first: no empty undo step
+        if (why != null) {
+            im.toast(why);
+            return;
+        }
+        String name = Doc.groupLabel(gr);
+        int up = d.parentOf(id);
+        s.mark();
+        d.ungroup(id);
+        s.changed(false);
+        if (s.groupIn == id) s.groupIn = up;
+        s.groupSel = 0;
+        s.pickGroups.clear();
+        im.toast("已解组「" + name + "」：里面的东西留在原地");
+    }
+
+    /** The picked group's centre on the preview: a ring and its name. */
+    private void groupMark() {
+        Group7 gr = s.doc.group(s.groupSel);
+        if (gr == null) return;
+        float px = gr.P.x.at(beat), py = gr.P.y.at(beat), pz = gr.P.z.at(beat);
+        float[] w = {px, py, pz};
+        Group7.Pose pp = Scene.pose(s.doc.parentOf(gr.id));
+        if (pp != null) pp.at(beat).point(px, py, pz, w);
+        for (int i = 0; i < 3; i++) q3[i] = w[i];
+        if (!px3(q3, pa)) return;
+        g.circle(pa[0], pa[1], 7f, 2f, Gfx.GND);
+        g.text("组「" + Doc.groupLabel(gr) + "」", pa[0] + 12f, pa[1] - 10f, 12, Gfx.GND);
     }
 
     /** 全选: every key, shown on the 音符 page. */
@@ -754,14 +1029,81 @@ final class EditorScreen implements CharterApp.View {
             if (fs[i].segs.isEmpty()) fs[i].segs.add(new Seg(t, t, p[i], p[i], 1f));
             else Doc.setAt(fs[i], t, p[i]);
         }
-        orbitYaw = orbitPitch = 0f;
-        orbitZoom = 1f;
-        viewPreset = -1;
+        homeView();
         s.changed(false);
         im.toast("已在第 " + Im.fmt(t) + " 拍加镜头节点：(" + Im.fmt(p[0]) + ", " + Im.fmt(p[1]) + ", " + Im.fmt(p[2]) + ")");
     }
 
     /** 新建漩涡 / 水帘: at the origin, from the playhead for {@link #VOL_BEATS} beats; it is selected. */
+    /**
+     * @return what the 关键帧 button keys now (SPEC §1): the selected lane's 原点 v, 下落向量 u and 宽长 a, the camera's P
+     *         and 视角, the selected veil's or curtain's 中心 and 大小, or the one selected key's h; null with none
+     */
+    Keyframes.Group[] keyGroups() {
+        Doc d = s.doc;
+        Group7 gr = insp.tab == Inspector.SCENE ? d.group(s.groupSel) : null;
+        if (gr != null) return Keyframes.position(Keyframes.group(gr), 3);
+        if (insp.tab == Inspector.LANE || insp.tab == Inspector.SCENE) {
+            Lane7 l = d.lane(s.laneSel);
+            return l != null ? Keyframes.position(Keyframes.lane(l), 3) : null;
+        }
+        if (insp.tab == Inspector.CAMERA) return Keyframes.camera(d);
+        if (insp.tab == Inspector.VOLUME) {
+            Doc.DVol v = d.volByUid(s.volSel);
+            return v != null ? Keyframes.position(Keyframes.volume(v), 2) : null;
+        }
+        Doc.DKey k = insp.tab == Inspector.NOTE ? s.single() : null;
+        return k != null ? Keyframes.position(Keyframes.key(k.k), 1) : null;
+    }
+
+    /**
+     * 「◇+ 关键帧」 (K, Kelvin 2026-11-11 16:39): a keyframe at the snapped playhead on what {@link #keyGroups} names,
+     * its values there kept; on a keyframe 「◆− 关键帧」 takes those off again (the segments around it become one).
+     */
+    void keyframe() {
+        Keyframes.Group[] gs = keyGroups();
+        if (gs == null) {
+            im.toast("先选中一条轨道、一个组、镜头、漩涡 / 水帘或者一个键");
+            return;
+        }
+        float t = snap(beat);
+        boolean on = Keyframes.on(gs, t), can = false;
+        for (Keyframes.Group gr : gs) can |= on ? Keyframes.canRemove(gr, t) : Keyframes.canAdd(gr, t);
+        if (!can) {
+            im.toast(on ? "判定拍的关键帧在这里去不掉（判定拍在音符页改）"
+                : "第 " + Im.fmt(t) + " 拍加不了关键帧（键的判定拍以后，或者正在出现 / 消失）");
+            return;
+        }
+        s.mark();
+        for (Keyframes.Group gr : gs) {
+            if (on) Keyframes.remove(gr, t);
+            else Keyframes.add(gr, t);
+        }
+        s.changed(false);
+        layers.revealSelection();
+    }
+
+    /** The 关键帧 button: ◇ + when the playhead is not on a keyframe of what it keys, ◆ − when it is. */
+    private void keyButton(float x, float y, float w, float h) {
+        Keyframes.Group[] gs = keyGroups();
+        boolean on = gs != null && Keyframes.on(gs, snap(beat)), hv = im.hover(x, y, w, h);
+        if (hv) im.cursor(Cursor.SystemCursor.Hand);
+        g.box(x, y, w, h, 6f, hv ? Gfx.BTN_HI : Gfx.BTN, on ? Gfx.SYNC : Gfx.BTN_LINE);
+        float cx = x + 16f, cy = y + h * 0.5f, r = 6f;
+        Color c = gs == null ? Gfx.INK3 : Gfx.SYNC;
+        if (on) {
+            g.tri(cx - r, cy, cx, cy - r, cx + r, cy, c, 1f);
+            g.tri(cx - r, cy, cx, cy + r, cx + r, cy, c, 1f);
+        } else {
+            g.line(cx - r, cy, cx, cy - r, 1.5f, c);
+            g.line(cx, cy - r, cx + r, cy, 1.5f, c);
+            g.line(cx + r, cy, cx, cy + r, 1.5f, c);
+            g.line(cx, cy + r, cx - r, cy, 1.5f, c);
+        }
+        g.text((on ? "− " : "+ ") + "关键帧", x + 28f, cy, TAB ? 14 : 13, gs == null ? Gfx.INK3 : Gfx.INK1);
+        if (im.click("kf", x, y, w, h)) keyframe();
+    }
+
     void newVolume(boolean curtain) {
         newVolumeAt(curtain, 0f, 0f, 0f);
     }
@@ -866,7 +1208,7 @@ final class EditorScreen implements CharterApp.View {
     }
 
     /** Draws the world segment a–b, cut where it goes behind the eye. */
-    private void line3(double[] a, double[] b, float w, Color c, float alpha) {
+    void line3(double[] a, double[] b, float w, Color c, float alpha) {
         double da = sc.depth(a[0], a[1], a[2]), db = sc.depth(b[0], b[1], b[2]), near = 2.0;
         if (da < near && db < near) return;
         double ax = a[0], ay = a[1], az = a[2], bx = b[0], by = b[1], bz = b[2];
@@ -895,6 +1237,7 @@ final class EditorScreen implements CharterApp.View {
     /** Lane frames of every lane at the playhead (this frame). */
     private void lanes() {
         Doc d = s.doc;
+        Scene.groups(d.groups);
         if (lfs.length != d.lanes.size()) {
             lfs = new float[d.lanes.size()][];
             for (int i = 0; i < lfs.length; i++) lfs[i] = new float[Scene.LF];
@@ -908,7 +1251,7 @@ final class EditorScreen implements CharterApp.View {
      * behind the eye
      */
     private boolean keyQuad(Key7 k, float[] lf) {
-        float up = Scene.keyUp(k, beat, lf), len = Scene.keyLength(k, beat), dirUp = k.sky ? -1f : 1f;
+        float up = Scene.keyUp(k, beat, lf), len = Scene.keyLength(k, beat, lf), dirUp = k.sky ? -1f : 1f;
         float u0 = up - dirUp * KEY_T * 0.5f, u1 = up + dirUp * Math.max(KEY_T * 0.5f, len);
         double hw = Math.abs(lf[Scene.W]) * 0.5;
         Scene.at(lf, -hw, u0, 0, p3, 0);
@@ -939,7 +1282,7 @@ final class EditorScreen implements CharterApp.View {
         return r;
     }
 
-    private Color keyColour(Key7 k) {
+    Color keyColour(Key7 k) {
         Color c = k.kind.mine() ? Gfx.MINE : k.kind.spans() ? Gfx.WAVE : k.kind == KeyKind.DRAG ? Theme.DRAG
             : k.sky ? UP_INK : Gfx.GND;
         return k.fake ? fakeInk.set(c).lerp(Gfx.INK3, 0.55f) : c;              // 假键: greyed
@@ -951,7 +1294,7 @@ final class EditorScreen implements CharterApp.View {
     }
 
     /** @return whether key k is a 假键 while 「显示：假键」 is off: not on the timeline, not picked */
-    private boolean hiddenFake(Doc.DKey k) {
+    boolean hiddenFake(Doc.DKey k) {
         return k.k.fake && !showFake;
     }
 
@@ -1023,40 +1366,47 @@ final class EditorScreen implements CharterApp.View {
     // ================================================================== preview: drawing and input
 
     private void preview() {
+        sc.k = K;                                                   // the line under the preview may have moved
+        sc.cx = PX + PW * 0.5f;
+        sc.cy = PY + PH * 0.5f;
         g.rect(PX, PY, PW, PH, PV_BG);
         Doc d = s.doc;
         if (viewPreset >= 0) {
             orbitYaw = orbitPitch = 0f;
         }
         sc.look(d.camera, d.fov, beat, overlays ? orbitYaw : 0f, overlays ? orbitPitch : 0f, overlays ? orbitZoom : 1f,
-            overlays ? viewPreset : -1);
+            overlays ? viewPreset : -1, overlays ? viewMove : null);
         lanes();
         im.pushClip(PX, PY, PW, PH);
         boolean real = s.runtime != null;
         if (real) gamePicture();
-        float cubeX = CUBE_X, top = PY + 12f, colB = PV_COL_X;
-        boolean overUi = im.inside(colB, top, PV_BTN_W, overlays ? 174f : 54f)
-            || overlays && (im.inside(cubeX, top, CUBE_BOX, CUBE_BOX + 28f)
-            || im.inside(PX + 12f, PY + 12f, 260f, 24f));
+        boolean sceneOn = insp.tab == Inspector.SCENE;
+        boolean overUi = im.inside(PV_COL_X, PV_COL_Y, PV_BTN_W, overlays ? (sceneOn ? 204f : 174f) : 54f)
+            || overlays && (im.inside(CUBE_X, CUBE_Y, CUBE_BOX, CUBE_BOX + 28f)
+            || !SIDE && im.inside(PX + 12f, PY + 12f, 260f, 24f));
         boolean inCanvas = im.hover(PX, PY, PW, PH) && !overUi && !curvesOver();
         if (inCanvas) sc.ray(im.mx, im.my, dir);
-        Doc.DKey hot = inCanvas && drag == D_NONE ? keyAt(im.mx, im.my) : null;
+        Doc.DKey hot = inCanvas && drag == D_NONE && !sceneOn ? keyAt(im.mx, im.my) : null;
         int hotVol = inCanvas && drag == D_NONE && insp.tab == Inspector.VOLUME && hot == null ? volUnder() : 0;
         int hotLane = inCanvas && drag == D_NONE && hot == null && hotVol == 0 ? laneUnder() : -1;
 
         if (overlays && axes) axesOverlay();
+        if (overlays && sceneOn) scene.grid();
         if (overlays || !real) {
             drawLanes(hotLane, real);
             drawVolumes(hotVol, real);
             drawKeys(hot, real);
         }
+        if (overlays) keyGhosts();
+        if (overlays) groupMark();
+        if (overlays && sceneOn) scene.draw(inCanvas && drag == D_NONE);
         if (overlays && placing() && inCanvas && drag == D_NONE && hot == null) ghost();
         if (d.lanes.isEmpty()) {
             g.text("还没有轨道：在右边「轨道」页新建", PX + PW * 0.5f, PY + PH * 0.5f, 14, Gfx.INK3, 1);
         }
         im.popClip();
         g.stroke(PX, PY, PW, PH, 6f, 1f, Gfx.LINE);
-        previewButtons(cubeX, top, colB);
+        previewButtons(CUBE_X, CUBE_Y, PV_COL_X, PV_COL_Y);
         if (im.modalOpen()) return;
         if (inCanvas && im.wheel != 0f && im.ctrl && im.alt) {      // Ctrl+Alt + the wheel: the editor's zoom
             orbitZoom = MathUtils.clamp(round2(orbitZoom * (float) Math.pow(1.1, -im.wheel)), 0.25f, 4f);
@@ -1130,6 +1480,7 @@ final class EditorScreen implements CharterApp.View {
         }
         pv.orbit(yaw, pitch);
         pv.zoom(overlays ? orbitZoom : 1f);
+        pv.pan((float) sc.moved[0], (float) sc.moved[1], (float) sc.moved[2]);
         pv.draw(g.batch, 1f);
         if (!overlays) pv.drawCorners(g.batch, pvClip);
         pv.drawCurtains(g.batch);
@@ -1160,14 +1511,15 @@ final class EditorScreen implements CharterApp.View {
             float[] lf = frame(i);
             if (lf == null) continue;
             Lane7 l = d.lanes.get(i);
-            boolean on = l.id == s.laneSel, hot = i == hotLane;
+            boolean on = l.id == s.laneSel || s.pickLanes.contains(l.id) || pickedGroup(l.g), hot = i == hotLane;
+            boolean out = s.groupIn != 0 && !d.within(l.g, s.groupIn);       // outside the entered group: faint
             if (real && !on && !hot) {                                  // the game draws it: its name only
                 Scene.at(lf, 0, lf[Scene.GND] - lf[Scene.GND_EXT], 0, p3, 0);
                 if (px3(p3, pa)) g.text(laneTag(l.id), pa[0], pa[1] + 12f, 11, Gfx.INK3, 1);
                 continue;
             }
             Color c = on ? Gfx.GND : hot ? Gfx.INK1 : Gfx.INK3;
-            float a = on ? 0.9f : hot ? 0.6f : 0.3f, w = on ? 2f : 1f;
+            float a = (on ? 0.9f : hot ? 0.6f : 0.3f) * (out ? 0.4f : 1f), w = on ? 2f : 1f;
             double hw = Math.abs(lf[Scene.W]) * 0.5, hd = Math.abs(lf[Scene.H]) * 0.5;
             double lo = lf[Scene.GND] - lf[Scene.GND_EXT], hi = lf[Scene.SKY] + lf[Scene.SKY_EXT];
             for (int sa = -1; sa <= 1; sa += 2) {
@@ -1207,7 +1559,7 @@ final class EditorScreen implements CharterApp.View {
             for (int ix : laneIxs(k)) {
                 float[] lf = frame(ix);
                 if (lf == null || !keyQuad(k, lf)) continue;
-                boolean longKey = Scene.keyLength(k, beat) > KEY_T * 0.5f;
+                boolean longKey = Scene.keyLength(k, beat, lf) > KEY_T * 0.5f;
                 if (real) {
                     // the game draws the key: only its outline when picked or under the mouse
                 } else if (longKey) {                                          // its body, then its head brighter
@@ -1258,40 +1610,122 @@ final class EditorScreen implements CharterApp.View {
         boolean page = insp.tab == Inspector.VOLUME;
         for (Doc.DVol dv : s.doc.vols) {
             Volume7 v = dv.v;
-            double cx = v.p.x.at(beat), cy = v.p.y.at(beat), cz = v.p.z.at(beat);
-            double ex = Math.abs(v.V.x.at(beat)) * 0.5, ey = Math.abs(v.V.y.at(beat)) * 0.5,
-                ez = Math.abs(v.V.z.at(beat)) * 0.5;
-            if (!(ex > 0.5 && ey > 0.5 && ez > 0.5)) continue;
             boolean on = dv.uid == s.volSel && page, hot = dv.uid == hotVol;
             if (real && !on && !hot) continue;                          // the game draws it
             Color c = v.curtain ? Gfx.FX : Gfx.TIDE;
             float a = on ? 1f : hot ? 0.8f : page ? 0.5f : 0.3f, w = on ? 2f : 1.2f;
-            double[] ax = Scene.volAxes(v, beat);                       // turned by its o
-            if (!v.ellipsoid) {
-                double[][] p = new double[8][3];
-                for (int i = 0; i < 8; i++) {
-                    double lx = (i & 1) == 0 ? -ex : ex, ly = (i & 2) == 0 ? -ey : ey, lz = (i & 4) == 0 ? -ez : ez;
-                    for (int j = 0; j < 3; j++) p[i][j] = (j == 0 ? cx : j == 1 ? cy : cz) + lx * ax[j] + ly * ax[3 + j]
-                        + lz * ax[6 + j];
-                }
-                for (int i = 0; i < 8; i++) {
-                    for (int b = 1; b <= 4; b <<= 1) if ((i & b) == 0) line3(p[i], p[i | b], w, c, a);
-                }
-            } else {
-                double[] prev = new double[3], cur = new double[3];
-                for (int ring = 0; ring < 3; ring++) {
-                    for (int q = 0; q <= 48; q++) {
-                        double ang = q * Math.PI * 2 / 48, cs = Math.cos(ang), sn = Math.sin(ang);
-                        double lx = ring == 2 ? 0 : ex * cs, ly = ring == 0 ? ey * sn : ring == 2 ? ey * cs : 0,
-                            lz = ring == 0 ? 0 : ez * sn;
-                        for (int j = 0; j < 3; j++) cur[j] = (j == 0 ? cx : j == 1 ? cy : cz) + lx * ax[j]
-                            + ly * ax[3 + j] + lz * ax[6 + j];
-                        if (q > 0) line3(prev, cur, w, c, a);
-                        System.arraycopy(cur, 0, prev, 0, 3);
-                    }
+            volEdges(v, beat, c, a, w);
+        }
+    }
+
+    /** Volume v's edges at beat t (nothing while it has no size): a box's twelve, an ellipsoid's three rings. */
+    private void volEdges(Volume7 v, float t, Color c, float a, float w) {
+        double cx = v.p.x.at(t), cy = v.p.y.at(t), cz = v.p.z.at(t);
+        double ex = Math.abs(v.V.x.at(t)) * 0.5, ey = Math.abs(v.V.y.at(t)) * 0.5, ez = Math.abs(v.V.z.at(t)) * 0.5;
+        if (!(ex > 0.5 && ey > 0.5 && ez > 0.5)) return;
+        double[] ax = Scene.volAxes(v, t);                              // turned by its o
+        if (!v.ellipsoid) {
+            double[][] p = new double[8][3];
+            for (int i = 0; i < 8; i++) {
+                double lx = (i & 1) == 0 ? -ex : ex, ly = (i & 2) == 0 ? -ey : ey, lz = (i & 4) == 0 ? -ez : ez;
+                for (int j = 0; j < 3; j++) p[i][j] = (j == 0 ? cx : j == 1 ? cy : cz) + lx * ax[j] + ly * ax[3 + j]
+                    + lz * ax[6 + j];
+            }
+            for (int i = 0; i < 8; i++) {
+                for (int b = 1; b <= 4; b <<= 1) if ((i & b) == 0) line3(p[i], p[i | b], w, c, a);
+            }
+        } else {
+            double[] prev = new double[3], cur = new double[3];
+            for (int ring = 0; ring < 3; ring++) {
+                for (int q = 0; q <= 48; q++) {
+                    double ang = q * Math.PI * 2 / 48, cs = Math.cos(ang), sn = Math.sin(ang);
+                    double lx = ring == 2 ? 0 : ex * cs, ly = ring == 0 ? ey * sn : ring == 2 ? ey * cs : 0,
+                        lz = ring == 0 ? 0 : ez * sn;
+                    for (int j = 0; j < 3; j++) cur[j] = (j == 0 ? cx : j == 1 ? cy : cz) + lx * ax[j]
+                        + ly * ax[3 + j] + lz * ax[6 + j];
+                    if (q > 0) line3(prev, cur, w, c, a);
+                    System.arraycopy(cur, 0, prev, 0, 3);
                 }
             }
         }
+    }
+
+    /**
+     * 关键帧的影子 (Kelvin 2026-11-11 16:39, SPEC §3): while a lane, veil or curtain is selected, it at each of its
+     * keyframes in amber (a lane by its 底面), a label with each one's number and beat (two at one place share it:
+     * 「① 0 拍 · ④ 6 拍」) and the dashed path its 底面 or centre takes between them, arrows showing which way.
+     */
+    private void keyGhosts() {
+        Doc d = s.doc;
+        Lane7 l = insp.tab == Inspector.LANE ? d.lane(s.laneSel) : null;
+        Doc.DVol v = insp.tab == Inspector.VOLUME && l == null ? d.volByUid(s.volSel) : null;
+        if (l == null && v == null) return;
+        float[] ts = Keyframes.points(l != null ? Keyframes.position(Keyframes.lane(l), 3)
+            : Keyframes.position(Keyframes.volume(v), 2));
+        if (ts.length < 2 || ts.length > 64) return;
+        float[] lf = new float[Scene.LF];
+        double[] a = new double[3], b = new double[3];
+        for (int i = 0; i + 1 < ts.length; i++) {                     // the path: every other of 12 steps, an arrow
+            float t0 = ts[i], t1 = ts[i + 1];
+            spot(l, v, t0, lf, a);
+            for (int q = 1; q <= 12; q++) {
+                spot(l, v, t0 + (t1 - t0) * q / 12f, lf, b);
+                if (q % 2 == 1) line3(a, b, 1.5f, Gfx.SYNC, 0.9f);
+                if (q == 7) arrow(a, b);
+                System.arraycopy(b, 0, a, 0, 3);
+            }
+        }
+        for (float t : ts) {                                            // the ghosts
+            if (l == null) {
+                volEdges(v.v, t, Gfx.SYNC, 0.55f, 1f);
+                continue;
+            }
+            Scene.laneFrame(l, t, lf);
+            if (Math.abs(lf[Scene.W]) < 0.5f) continue;
+            face(lf, lf[Scene.GND], Math.abs(lf[Scene.W]) * 0.5, Math.abs(lf[Scene.H]) * 0.5, Gfx.SYNC, 1.5f, 0.85f);
+        }
+        ArrayList<float[]> at = new ArrayList<>();                      // the labels
+        ArrayList<StringBuilder> text = new ArrayList<>();
+        for (int i = 0; i < ts.length; i++) {
+            spot(l, v, ts[i], lf, a);
+            if (!px3(a, pa)) continue;
+            String one = Keyframes.circled(i) + " " + Im.fmt(ts[i]) + " 拍";
+            int k = -1;
+            for (int j = 0; j < at.size() && k < 0; j++) {
+                if (Math.hypot(at.get(j)[0] - pa[0], at.get(j)[1] - pa[1]) < 8f) k = j;
+            }
+            if (k >= 0) text.get(k).append(" · ").append(one);
+            else {
+                at.add(new float[]{pa[0], pa[1]});
+                text.add(new StringBuilder(one));
+            }
+        }
+        for (int j = 0; j < at.size(); j++) {
+            float[] p = at.get(j);
+            String tx = text.get(j).toString();
+            float w = g.width(tx, 11) + 14f;
+            g.disc(p[0], p[1], 4f, Gfx.SYNC);
+            g.box(p[0] - w * 0.5f, p[1] + 9f, w, 18f, 9f, Gfx.BAR, Gfx.SYNC);
+            g.text(tx, p[0], p[1] + 18f, 11, Gfx.SYNC, 1);
+        }
+    }
+
+    /** Where the keyframe path is at beat t: lane l's 底面 centre, else volume v's centre. */
+    private static void spot(Lane7 l, Doc.DVol v, float t, float[] lf, double[] out) {
+        if (l != null) Keyframes.laneSpot(l, t, lf, out);
+        else Keyframes.volSpot(v.v, t, out);
+    }
+
+    /** An arrowhead at b on the screen, pointing the way from a to b. */
+    private void arrow(double[] a, double[] b) {
+        if (!px3(a, pa) || !px3(b, pb2)) return;
+        float dx = pb2[0] - pa[0], dy = pb2[1] - pa[1], n = (float) Math.hypot(dx, dy);
+        if (n < 1f) return;
+        dx /= n;
+        dy /= n;
+        float x = pb2[0], y = pb2[1], r = 7f;
+        float sx = dy * r * 0.6f, sy = dx * r * 0.6f;
+        g.tri(x + dx * r, y + dy * r, x - sx, y + sy, x + sx, y - sy, Gfx.SYNC, 0.95f);
     }
 
     /** The key a press would place now, faint, where it would be. */
@@ -1310,33 +1744,47 @@ final class EditorScreen implements CharterApp.View {
         g.text("第 " + Im.fmt(b) + " 拍", quad[2] + 6f, quad[3], 11, Gfx.INK2);
     }
 
-    private static float round3(float v) {
+    static float round3(float v) {
         return Math.round(v * 1000f) / 1000f;
     }
 
     private boolean placing() {
-        return tool != T_SELECT;
+        return tool != T_SELECT && tool != T_BOX;
     }
 
-    /** The preview's buttons: sync, ⇆ 实机, 坐标系; 拖这里转视角, 归位, 镜头节点 and the six views. */
-    private void previewButtons(float cubeX, float top, float colB) {
-        boolean turned = orbitYaw != 0f || orbitPitch != 0f || orbitZoom != 1f || viewPreset >= 0;
+    /** The preview's buttons: sync, ⇆ 实机, 坐标系; 拖这里转视角, 归位, 镜头节点 and the six views (see {@link #SIDE}). */
+    private void previewButtons(float cubeX, float cubeY, float colB, float colY) {
+        boolean moved = viewMove[0] != 0f || viewMove[1] != 0f || viewMove[2] != 0f;
+        boolean turned = orbitYaw != 0f || orbitPitch != 0f || orbitZoom != 1f || viewPreset >= 0 || moved;
         if (overlays) {
             String tag = "预览 · 第 " + String.format(Locale.ROOT, "%.2f", beat) + " 拍";
             if (viewPreset >= 0) tag += " · " + Scene.VIEW_NAMES[viewPreset];
-            else if (turned) {
+            else if (orbitYaw != 0f || orbitPitch != 0f || orbitZoom != 1f) {
                 tag += " · 视角 " + Math.round(orbitYaw) + "° " + Math.round(orbitPitch) + "°"
                     + (orbitZoom != 1f ? " ×" + Im.fmt(round2(orbitZoom)) : "");
+            }
+            if (moved) {
+                tag += " · 挪动 右 " + Math.round(viewMove[0]) + " 上 " + Math.round(viewMove[1]) + " 前 "
+                    + Math.round(viewMove[2]);
             }
             Lane7 l = s.doc.lane(s.laneSel);
             if (l != null && insp.tab == Inspector.LANE) {
                 tag += " · 轨道 " + s.doc.laneLabel(l.id) + " 宽 " + Math.round(l.w.at(beat)) + " 长 "
                     + Math.round(l.h.at(beat));
             }
-            float tw = g.width(tag, 12) + 20f;
-            g.box(PX + 12f, PY + 12f, tw, 24f, 4f, Gfx.BAR, Gfx.LINE);
-            g.text(tag, PX + 22f, PY + 24f, 12, Gfx.INK3);
+            if (SIDE) {                                                 // in the strip: a line each, under its buttons
+                String[] parts = tag.split(" · ");
+                float y = Math.max(cubeY + CUBE_BOX + 26f, colY + (insp.tab == Inspector.SCENE ? 204f : 174f)) + 22f;
+                im.pushClip(PX + PW, PY, TR - PX - PW, PH);
+                for (int i = 1; i < parts.length; i++) g.text(parts[i], cubeX, y + (i - 1) * 20f, 12, Gfx.INK3);
+                im.popClip();
+            } else {
+                float tw = g.width(tag, 12) + 20f;
+                g.box(PX + 12f, PY + 12f, tw, 24f, 4f, Gfx.BAR, Gfx.LINE);
+                g.text(tag, PX + 22f, PY + 24f, 12, Gfx.INK3);
+            }
         }
+        float top = overlays ? colY : Math.min(colY, cubeY);            // 实机: no cube, the two buttons at the top
         // one column (Kelvin 2026-11-09 20:16「sync高亮和显示坐标系放在镜头节点下面」): 实机, 镜头节点, sync, 坐标系, 假键
         if (im.button("pv-view", colB, top, PV_BTN_W, 24f, "⇆ 实机", overlays ? Im.NORMAL : Im.ON, 12)) {
             overlays = !overlays;
@@ -1358,12 +1806,11 @@ final class EditorScreen implements CharterApp.View {
             12)) {
             laneIds = !laneIds;
         }
-        viewCube(cubeX, top);
-        if (im.button("pv-home", cubeX + (CUBE_BOX - 64f) * 0.5f, top + CUBE_BOX + 2f, 64f, 24f, "归位",
+        if (insp.tab == Inspector.SCENE) scene.gridButton(colB, top + 180f);
+        viewCube(cubeX, cubeY);
+        if (im.button("pv-home", cubeX + (CUBE_BOX - 64f) * 0.5f, cubeY + CUBE_BOX + 2f, 64f, 24f, "归位",
             turned ? Im.NORMAL : Im.GHOST, 12)) {
-            orbitYaw = orbitPitch = 0f;
-            orbitZoom = 1f;
-            viewPreset = -1;
+            homeView();
         }
     }
 
@@ -1439,6 +1886,7 @@ final class EditorScreen implements CharterApp.View {
                 if (!cubeTurning && cubePress >= 0) {
                     viewPreset = cubePress >= 100 ? cubePress - 100 : cubePress;
                     orbitZoom = 1f;
+                    Arrays.fill(viewMove, 0f);
                 }
                 cubeHeld = false;
             }
@@ -1512,7 +1960,7 @@ final class EditorScreen implements CharterApp.View {
     /** Self-test: where a click on the cube's side k lands, or null while it faces away (the cube at its place). */
     float[] cubeCentre(int k) {
         if (cubeFacing(k) <= 0.05f) return null;
-        float cx = CUBE_X + CUBE_BOX * 0.5f, cy = PY + 12f + CUBE_BOX * 0.5f;
+        float cx = CUBE_X + CUBE_BOX * 0.5f, cy = CUBE_Y + CUBE_BOX * 0.5f;
         int n = cubeRegion(k, cx, cy);
         float x = 0f, y = 0f;
         for (int i = 0; i < n; i++) {
@@ -1553,6 +2001,7 @@ final class EditorScreen implements CharterApp.View {
     private void pressPreview(Doc.DKey hot, int hotVol, int hotLane) {
         Doc d = s.doc;
         dMarked = false;
+        if (insp.tab == Inspector.SCENE && scene.press()) return;      // 方块, or the handle
         float[] th = tool == T_SELECT ? tailHandle() : null;
         if (th != null && Math.hypot(th[0] - im.mx, th[1] - im.my) < 10f * TOUCH) {
             dKey = s.single();
@@ -1566,7 +2015,7 @@ final class EditorScreen implements CharterApp.View {
             }
             return;
         }
-        if (tool != T_SELECT) {
+        if (placing()) {
             int ix = laneUnder();
             float[] lf = frame(ix);
             if (lf == null) {
@@ -1611,25 +2060,65 @@ final class EditorScreen implements CharterApp.View {
         }
         if (hotLane >= 0) {
             Lane7 l = d.lanes.get(hotLane);
-            dUnpick = l.id == s.laneSel;
-            s.laneSel = l.id;
+            long now = System.currentTimeMillis();
+            boolean dbl = now - lastPress < DOUBLE_MS
+                && Math.hypot(im.mx - lastPressX, im.my - lastPressY) < 8f * TOUCH;
+            lastPress = now;
+            lastPressX = im.mx;
+            lastPressY = im.my;
+            int item = d.pickIn(l.g, s.groupIn);
+            while (item == Integer.MIN_VALUE && s.groupIn != 0) {         // outside the entered group: out of it
+                s.groupIn = d.parentOf(s.groupIn);
+                item = d.pickIn(l.g, s.groupIn);
+            }
+            if (dbl && item != 0 && item != Integer.MIN_VALUE) {          // 双击进组: then the thing in it
+                enterGroup(item);
+                item = d.pickIn(l.g, s.groupIn);
+            }
+            if (item != 0 && item != Integer.MIN_VALUE) {                 // a whole group (组, chart 2.1)
+                Group7 gr = d.group(item);
+                pickGroup(gr.id, adding());
+                if (!adding()) s.sel.clear();
+                Group7.Pose pp = Scene.pose(d.parentOf(gr.id));
+                float px = gr.P.x.at(beat), py = gr.P.y.at(beat), pz = gr.P.z.at(beat);
+                float[] w = {px, py, pz};
+                if (pp != null) pp.at(beat).point(px, py, pz, w);
+                startMove(gr.id, w[0], w[1], w[2], D_GROUP);
+                dV0[0] = px;
+                dV0[1] = py;
+                dV0[2] = pz;
+                dPose = pp;
+                return;
+            }
+            dUnpick = !adding() && l.id == s.laneSel;
+            pickLane(l.id, adding());
             if (!adding()) s.sel.clear();
-            insp.tab = Inspector.LANE;
-            startMove(l.id, l.v.x.at(beat), l.v.y.at(beat), l.v.z.at(beat), D_LANE);
+            float[] lf = lfs[hotLane];                                  // its origin where its group takes it
+            startMove(l.id, lf[Scene.O], lf[Scene.O + 1], lf[Scene.O + 2], D_LANE);
+            dV0[0] = l.v.x.at(beat);
+            dV0[1] = l.v.y.at(beat);
+            dV0[2] = l.v.z.at(beat);
+            dPose = Scene.pose(l.g);
             return;
         }
         if (!adding()) {
             s.sel.clear();
             if (insp.tab == Inspector.VOLUME) s.volSel = 0;
+            s.groupSel = s.groupIn = 0;                                  // and out of any group
+            s.pickGroups.clear();
+            s.pickLanes.clear();
+            if (insp.tab == Inspector.SCENE) s.laneSel = Session.NO_LANE;  // the 场景 page: nothing picked
+            else if (s.laneSel != Session.NO_LANE) s.pickLanes.add(s.laneSel);
         }
     }
 
     /** Starts moving a lane's origin or a volume's centre (at x, y, z now) in the plane through it facing the eye. */
     private void startMove(int id, float x, float y, float z, int kind) {
         dId = id;
-        dAt0[0] = x;
-        dAt0[1] = y;
-        dAt0[2] = z;
+        dAt0[0] = dV0[0] = x;
+        dAt0[1] = dV0[1] = y;
+        dAt0[2] = dV0[2] = z;
+        dPose = null;
         if (!sc.onFacing(dir, x, y, z, dGrab)) return;
         drag = kind;
         dMarked = false;
@@ -1639,6 +2128,10 @@ final class EditorScreen implements CharterApp.View {
     private boolean moved;
 
     private void dragPreview() {
+        if (scene.handle != 0) {
+            scene.drag();
+            return;
+        }
         if (drag == D_NONE) return;
         if (drag == D_PRESS_KEY && Math.hypot(im.mx - im.pressX, im.my - im.pressY) > 4f) {
             drag = D_MOVE_KEY;
@@ -1650,7 +2143,7 @@ final class EditorScreen implements CharterApp.View {
         if (drag == D_MOVE_KEY && lf != null && !Float.isNaN(dUp0)) {
             float up = upOn(lf);
             if (Float.isNaN(up)) return;
-            float dh = (up - dUp0) * (dKey.k.sky ? -1f : 1f);
+            float dh = (up - dUp0) * (dKey.k.sky ? -1f : 1f) / Math.max(1e-6f, lf[Scene.KS]);
             float by = im.alt ? round3(dh / Doc.APPROACH) : snapDelta(dh / Doc.APPROACH);
             if (by != dApplied) {
                 lazyMark();
@@ -1663,7 +2156,7 @@ final class EditorScreen implements CharterApp.View {
             float up = upOn(lf);
             if (Float.isNaN(up)) return;
             Key7 k = dKey.k;
-            float hNow = k.sky ? lf[Scene.SKY] - up : up - lf[Scene.GND];
+            float hNow = (k.sky ? lf[Scene.SKY] - up : up - lf[Scene.GND]) / Math.max(1e-6f, lf[Scene.KS]);
             float len = (hNow - k.h.at(beat)) / Doc.APPROACH;
             len = im.alt ? round3(len) : snapDelta(len);
             float min = step() > 0f ? step() : 0.25f;
@@ -1674,16 +2167,22 @@ final class EditorScreen implements CharterApp.View {
                 Doc.setLength(k, len);
                 s.changed(true);
             }
-        } else if (drag == D_LANE || drag == D_VOL) {
+        } else if (drag == D_LANE || drag == D_VOL || drag == D_GROUP) {
             if (!sc.onFacing(dir, dAt0[0], dAt0[1], dAt0[2], p3)) return;
             float[] to = new float[3];
-            for (int i = 0; i < 3; i++) to[i] = Math.round(dAt0[i] + (float) (p3[i] - dGrab[i]));
+            for (int i = 0; i < 3; i++) q3[i] = p3[i] - dGrab[i];
+            if (dPose != null) toGroup(dPose.at(beat), q3);
+            for (int i = 0; i < 3; i++) to[i] = scene.snapLen(dV0[i] + (float) q3[i]);  // on the grid (场景 page)
             if (!moved && Math.hypot(im.mx - im.pressX, im.my - im.pressY) < 4f) return;
             Fn[] fs;
             if (drag == D_LANE) {
                 Lane7 l = s.doc.lane(dId);
                 if (l == null) return;
                 fs = new Fn[]{l.v.x, l.v.y, l.v.z};
+            } else if (drag == D_GROUP) {
+                Group7 gr = s.doc.group(dId);
+                if (gr == null) return;
+                fs = new Fn[]{gr.P.x, gr.P.y, gr.P.z};
             } else {
                 Doc.DVol v = s.doc.volByUid(dId);
                 if (v == null) return;
@@ -1697,6 +2196,12 @@ final class EditorScreen implements CharterApp.View {
         }
     }
 
+    /** Turns move q (chart axes) into the axes of the group whose pose is p: back through its turn, over its size. */
+    static void toGroup(Group7.Pose p, double[] q) {
+        double x = q[0], y = q[1], z = q[2], k = Math.max(1e-6, p.k);
+        for (int i = 0; i < 3; i++) q[i] = (p.m[i] * x + p.m[3 + i] * y + p.m[6 + i] * z) / k;
+    }
+
     private void lazyMark() {
         if (dMarked) return;
         dMarked = true;
@@ -1704,12 +2209,10 @@ final class EditorScreen implements CharterApp.View {
     }
 
     private void endDrag() {
-        if (drag == D_BOX) commitBox();
+        layers.endDrag();
+        scene.release();
         if (drag == D_LANE && !moved && dUnpick && im.released) s.laneSel = Session.NO_LANE;
         if (drag == D_PV_START || drag == D_PV_END) previewTo(dPv0, dPv1);
-        if (drag == D_TL_PRESS && dKey != null && !adding() && im.released) {
-            s.select(dKey, false);                                  // a click on a selected one picks it alone
-        }
         if ((drag == D_PAN) && !dPanMoved && im.released) seekBeat(snap((float) beatAtX(im.mx)));
         if (dMarked && drag != D_NONE) s.changed(false);
         drag = D_NONE;
@@ -1768,66 +2271,80 @@ final class EditorScreen implements CharterApp.View {
         }
     }
 
-    private float rowTop(boolean sky) {
-        return sky ? R_UP : R_LOW;
-    }
-
-    private float rowH(boolean sky) {
-        return sky ? R_UP_H : R_LOW_H;
-    }
-
-    /** @return a key's marker height in its row: by its lane's place, left lanes at the top */
-    private float markerY(Doc.DKey k) {
-        float top = rowTop(k.k.sky), h = rowH(k.k.sky);
-        if (k.k.kind.spans()) return top + h * 0.5f;
-        int lc = Math.max(1, s.doc.lanes.size()), li = Math.max(0, s.doc.laneIndex(k.k.lane));
-        return top + 4f + (li + 0.5f) / lc * (h - 8f);
-    }
-
-    private Doc.DKey markerAt(float mx, float my) {
-        Doc.DKey best = null;
-        float bd = 7f * TOUCH;
-        for (Doc.DKey k : s.doc.keys) {
-            float j = k.judge();
-            if (!Float.isFinite(j) || hiddenFake(k)) continue;
-            float x = bx(j), xe = k.k.kind.hasHeight() ? bx(k.end()) : x;
-            if (xe < TX - 8f || x > TR + 8f) continue;
-            float dy = !k.k.kind.spans() ? Math.abs(my - markerY(k))
-                : (my >= rowTop(k.k.sky) && my <= rowTop(k.k.sky) + rowH(k.k.sky) ? 0f : 99f);
-            float dx = mx < x ? x - mx : mx > xe ? mx - xe : 0f;
-            float dd = Math.max(dx, dy) + (mx >= x - 4f && mx <= x + 4f ? 0f : 1.5f);
-            if (dd < bd) {
-                bd = dd;
-                best = k;
-            }
+    /**
+     * The line between the preview and the timeline (SPEC §2): dragged up the timeline grows and the preview gets
+     * smaller (16 : 10 kept), dragged down the other way, at most back to the biggest preview.
+     */
+    private void splitter() {
+        float hz = TAB ? 8f : 4f;
+        boolean on = drag == D_NONE && !im.modalOpen() && !im.popupOpen()
+            && im.hover(64f, TL_TOP - hz, TR - 64f, hz * 2f);
+        if (on || splitting) im.cursor(Cursor.SystemCursor.VerticalResize);
+        if (on && im.pressed && !im.rightPressed) splitting = true;
+        if (splitting) {
+            if (im.down) layout(im.my);
+            else splitting = false;
         }
-        return best;
+        float cx = TX + TW * 0.5f;
+        g.rrect(cx - 22f, TL_TOP - 2f, 44f, 4f, 2f, on || splitting ? Gfx.INK2 : Gfx.SEL_LINE);
     }
 
+    /**
+     * The timeline (Kelvin 2026-11-11 16:39, SPEC §2): the ruler on top (the playhead's beat in a box; a drag moves
+     * the playhead), the 音频 strip (waveform or a voice, the song list's preview window, BPM tags) and the layers
+     * ({@link Layers}); on the left 只看选中, 搜索轨道, 曲线 › and 音频.
+     */
     private void timeline() {
+        layers.block();
         g.rect(64f, TL_TOP, TR - 64f, TL_BOTTOM - TL_TOP, Gfx.BAR2);
         g.line(64f, TL_TOP, TR, TL_TOP, 1f, Gfx.LINE);
+        splitter();
         if (curves.on) return;                                       // the curve window draws here after the inspector
-        if (im.button("tl-curves", 68f, R_RULER - 1f, TX - 74f, 21f, "曲线 ›", Im.GHOST, 11)) curves.show(insp.openId());
-        int vp = im.dropdown("tl-voice", 68f, R_AUDIO + 4f, TX - 74f, 26f,
+        header();
+        im.pushClip(TX, TL_TOP, TW, TL_BOTTOM - TL_TOP);
+        grid();
+        audioStrip();
+        im.popClip();
+        layers.draw();
+        im.pushClip(TX, TL_TOP, TW, TL_BOTTOM - TL_TOP);
+        float px = bx(beat);                                          // the playhead, its beat on the ruler
+        g.line(px, R_RULER + RULER_H, px, TL_BOTTOM, 2f, Color.WHITE);
+        String bl = String.format(Locale.ROOT, "%.2f", beat);
+        float bw = g.width(bl, 11) + 14f;
+        g.rrect(px - bw * 0.5f, R_RULER + 1f, bw, RULER_H - 2f, 4f, Gfx.PRI_TOP);
+        g.text(bl, px, R_RULER + RULER_H * 0.5f, 11, Gfx.PRI_INK, 1);
+        im.popClip();
+        timelineInput();
+    }
+
+    /** Left of the ruler: 只看选中, 搜索轨道 (a lane's name or number) and 曲线 ›; left of the strip: 音频. */
+    private void header() {
+        float y = R_RULER, h = RULER_H, x = 68f;
+        float w1 = TAB ? 64f : 78f, w2 = TAB ? 72f : 110f, w3 = TAB ? 40f : 54f, fx = x + w1 + 4f;
+        if (im.button("tl-only", x, y, w1, h, "只看选中", layers.onlySel ? Im.ON : Im.GHOST, 11)) {
+            layers.onlySel = !layers.onlySel;
+        }
+        String typed = im.field("tl-find", fx, y, w2, h, layers.filter, "", false);
+        if (typed != null) layers.filter = typed.trim();
+        String live = im.live("tl-find");
+        layers.find = live != null ? live : layers.filter;
+        if (layers.find.isEmpty() && live == null) g.text("搜索轨道", fx + 8f, y + h * 0.5f, 11, Gfx.INK3);
+        if (im.button("tl-curves", fx + w2 + 4f, y, w3, h, "曲线 ›", Im.GHOST, 11)) curves.show(insp.openId());
+        int vp = im.dropdown("tl-voice", 68f, R_AUDIO + 2f, TAB ? 80f : 84f, AUDIO_H - 4f,
             wantVoice < 0 ? "音频" : VoiceSplit.NAMES[wantVoice], VOICE_ITEMS, wantVoice + 1);
         if (vp >= 0 && vp - 1 != wantVoice) pickVoice(vp - 1);
-        g.text("天面", 76f, R_UP + R_UP_H * 0.5f, 13, UP_INK);
-        g.text("底面", 76f, R_LOW + R_LOW_H * 0.5f, 13, Gfx.GND);
-        g.text("函数", 76f, R_FIELD + R_FIELD_H * 0.5f, 13, Gfx.INK3);
         if (TAB) zoomButtons();
-        g.rect(TX, R_UP, TW, R_UP_H, Gfx.ITEM, 0.45f);
-        g.rect(TX, R_LOW, TW, R_LOW_H, Gfx.ITEM, 0.45f);
-        im.pushClip(TX, TL_TOP, TW, TL_BOTTOM - TL_TOP);
+    }
 
-        // beat grid
+    /** The ruler's beats and the beat and snap lines down through the rows. */
+    private void grid() {
         double ppb = TW / tlSpan;
         int b0 = (int) Math.floor(tlStart), b1 = (int) Math.ceil(tlStart + tlSpan);
         float st = step();
         if (st > 0f && ppb * st >= 10.0) {
             for (int k = (int) Math.floor(tlStart / st); k * st <= tlStart + tlSpan; k++) {
                 float x = bx(k * st);
-                g.line(x, R_UP, x, R_FIELD, 1f, Gfx.LINE2, 0.5f);
+                g.line(x, R_ROWS, x, TL_BOTTOM, 1f, Gfx.LINE2, 0.5f);
             }
         }
         int labelEvery = 1;
@@ -1835,14 +2352,17 @@ final class EditorScreen implements CharterApp.View {
         for (int b = b0; b <= b1; b++) {
             float x = bx(b);
             boolean bar = Math.floorMod(b, 4) == 0;
-            g.line(x, R_UP, x, R_RULER, 1f, Gfx.LINE, bar ? 0.9f : 0.45f);
+            g.line(x, R_ROWS, x, TL_BOTTOM, 1f, Gfx.LINE, bar ? 0.9f : 0.45f);
+            g.line(x, R_RULER + RULER_H - 4f, x, R_RULER + RULER_H, 1f, Gfx.INK3, bar ? 0.9f : 0.5f);
             if (Math.floorMod(b, labelEvery) == 0) {
-                g.line(x, R_RULER, x, R_RULER + 5f, 1f, Gfx.INK3);
-                g.text(Integer.toString(b), x + 3f, R_RULER + 11f, 11, Gfx.INK3);
+                g.text(Integer.toString(b), x + 3f, R_RULER + RULER_H * 0.5f - 1f, 11, Gfx.INK3);
             }
         }
+        g.line(TX, R_RULER + RULER_H, TR, R_RULER + RULER_H, 1f, Gfx.LINE);
+    }
 
-        // waveform, or the picked voice (声部分析)
+    /** The 音频 strip: the waveform or the picked voice, the song list's preview window, the BPM tags. */
+    private void audioStrip() {
         if (wantVoice >= 0 && voices != null && !voices.ready()) {
             g.text("正在分析声部… " + Math.round(voices.progress() * 100f) + "%（每首歌只算一次，之后直接读）",
                 TX + 12f, R_AUDIO + 15f, 12, Gfx.INK3);
@@ -1861,7 +2381,7 @@ final class EditorScreen implements CharterApp.View {
         if (!s.song.tutorial) {
             boolean dragging = drag == D_PV_START || drag == D_PV_END;
             float w0 = dragging ? dPv0 : pvBeat(false), w1 = dragging ? dPv1 : pvBeat(true);
-            float pv0 = bx(w0), pv1 = bx(w1), h = R_UP - 4f - R_AUDIO;
+            float pv0 = bx(w0), pv1 = bx(w1), h = AUDIO_H;
             if (pv1 > TX && pv0 < TR) {
                 g.rect(pv0, R_AUDIO, pv1 - pv0, h, Gfx.TIDE, 0.16f);
                 for (float x : new float[]{pv0, pv1}) {
@@ -1870,42 +2390,10 @@ final class EditorScreen implements CharterApp.View {
                 }
                 String l = "预览 " + Im.fmt(w0) + " – " + Im.fmt(w1) + " 拍";
                 float lx = Math.max(pv0, TX) + 8f;
-                g.rect(lx - 3f, R_UP - 19f, g.width(l, 11) + 6f, 14f, Gfx.BAR2, 0.85f);
-                g.text(l, lx, R_UP - 12f, 11, Gfx.TIDE);
+                g.rect(lx - 3f, R_AUDIO + h - 15f, g.width(l, 11) + 6f, 14f, Gfx.BAR2, 0.85f);
+                g.text(l, lx, R_AUDIO + h - 8f, 11, Gfx.TIDE);
             }
         }
-
-        // keys
-        for (Doc.DKey k : s.doc.keys) {
-            float j = k.judge();
-            if (!Float.isFinite(j) || hiddenFake(k)) continue;
-            float x = bx(j), xe = k.k.kind.hasHeight() ? bx(k.end()) : x;
-            if (xe < TX - 8f || x > TR + 8f) continue;
-            boolean sel = s.sel.contains(k.uid), sky = k.k.sky;
-            Color c = keyColour(k.k);
-            if (k.k.kind.spans()) {
-                float top = rowTop(sky) + 2f, h = rowH(sky) - 4f;
-                if (xe > x) g.rect(x, top, xe - x, h, c, 0.25f);
-                g.rect(x - 1f, top, 2f, h, c);
-                if (sel) g.stroke(x - 3f, top - 1f, xe - x + 6f, h + 2f, 2f, 1.5f, Color.WHITE);
-                continue;
-            }
-            float y = markerY(k);
-            if (xe > x) g.rect(x, y - 1.5f, xe - x, 3f, c, 0.85f);
-            if (k.k.kind == KeyKind.MINE || k.k.kind == KeyKind.STREAM_MINE) {
-                g.stroke(x - 3f, y - 3f, 6f, 6f, 1f, 1.3f, c);
-            }
-            else if (k.k.kind == KeyKind.DRAG) {
-                g.tri(x - 4f, y, x, y - 4f, x + 4f, y, c, 1f);
-                g.tri(x - 4f, y, x, y + 4f, x + 4f, y, c, 1f);
-            } else g.rect(x - 2.5f, y - 2.5f, 5f, 5f, c);
-            if (sel) g.stroke(x - 5f, y - 5f, xe - x + 10f, 10f, 2f, 1.5f, Color.WHITE);
-        }
-
-        // the picked thing's functions: a bar per segment
-        bars.clear();
-        barIds.clear();
-        fnBars();
 
         // tempo markers
         Doc d = s.doc;
@@ -1915,113 +2403,35 @@ final class EditorScreen implements CharterApp.View {
             float x = bx(sg.beat);
             if (sg == pinned && sg.beat <= tlStart) x = TX + 2f;
             else if (x < TX - 70f || x > TR) continue;
-            else g.dashed(x, R_AUDIO + 14f, x, R_RULER, 1f, 4f, Gfx.BPM, 0.8f);
-            g.rrect(x, R_AUDIO - 2f, 62f, 16f, 3f, Gfx.BPM);
-            g.text("♩ " + Im.fmt(sg.bpm), x + 6f, R_AUDIO + 6f, 11, Gfx.PRI_INK);
-        }
-
-        // playhead
-        float px = bx(beat);
-        g.line(px, R_AUDIO - 2f, px, R_RULER + 20f, 2f, Color.WHITE);
-        g.tri(px - 6f, R_AUDIO - 4f, px + 6f, R_AUDIO - 4f, px, R_AUDIO + 4f, Color.WHITE, 1f);
-
-        if (drag == D_BOX) {
-            float x0 = Math.min(im.pressX, im.mx), y0 = Math.min(im.pressY, im.my);
-            g.rect(x0, y0, Math.abs(im.mx - im.pressX), Math.abs(im.my - im.pressY), Gfx.GND, 0.12f);
-            g.stroke(x0, y0, Math.abs(im.mx - im.pressX), Math.abs(im.my - im.pressY), 1f, 1f, Gfx.GND);
-        }
-        im.popClip();
-        timelineInput();
-    }
-
-    /** The 函数 row: the segments of what the inspector shows (its lane, key, the camera, its veil or curtain). */
-    private void fnBars() {
-        Doc d = s.doc;
-        if (insp.tab == Inspector.LANE) {
-            Lane7 l = d.lane(s.laneSel);
-            if (l == null) return;
-            String[] n = {"下x", "下y", "下z", "原x", "原y", "原z", "宽", "长", "S", "s", "F", "f", "透明度"};
-            Fn[] fs = Doc.fns(l);
-            for (int k = 0; k < fs.length; k++) fnBar(fs[k], "l" + l.id + "-" + k, n[k]);
-        } else if (insp.tab == Inspector.NOTE) {
-            Doc.DKey k = s.single();
-            if (k == null) return;
-            fnBar(k.k.h, "k-h", "h");
-            fnBar(k.k.H, "k-H", "H");
-            fnBar(k.k.o, "k-o", "透明度");
-        } else if (insp.tab == Inspector.CAMERA) {
-            fnBar(d.camera.x, "cam-0", "P x");
-            fnBar(d.camera.y, "cam-1", "P y");
-            fnBar(d.camera.z, "cam-2", "P z");
-            fnBar(d.fov, "cam-3", "视角");
-        } else if (insp.tab == Inspector.VOLUME) {
-            Doc.DVol v = d.volByUid(s.volSel);
-            if (v == null) return;
-            String[] n = {"宽", "高", "深", "x", "y", "z", "o x", "o y", "o z", "模糊"};
-            Fn[] fs = Doc.fns(v.v);
-            for (int k = 0; k < fs.length; k++) fnBar(fs[k], "v" + v.uid + "-" + k, n[k]);
+            else g.dashed(x, R_AUDIO + 16f, x, R_AUDIO + AUDIO_H, 1f, 4f, Gfx.BPM, 0.8f);
+            g.rrect(x, R_AUDIO + 1f, 62f, 16f, 3f, Gfx.BPM);
+            g.text("♩ " + Im.fmt(sg.bpm), x + 6f, R_AUDIO + 9f, 11, Gfx.PRI_INK);
         }
     }
 
-    private void fnBar(Fn f, String id, String label) {
-        boolean open = id.equals(insp.openId());
-        for (Seg sg : f.segs) {
-            float x0 = bx(sg.ti), x1 = Math.max(bx(Math.max(sg.ti, sg.tf)), x0 + 3f);
-            if (x1 < TX || x0 > TR) continue;
-            g.rrect(x0, R_FIELD + 4f, x1 - x0, R_FIELD_H - 8f, 3f, open ? Gfx.SYNC : Gfx.FX, open ? 0.6f : 0.4f);
-            if (x1 - x0 > 30f) g.text(label, Math.max(x0, TX) + 5f, R_FIELD + R_FIELD_H * 0.5f, 10, Gfx.INK1);
-            bars.add(new float[]{x0, x1});
-            barIds.add(id);
-        }
-    }
-
+    /** The ruler and the 音频 strip: a press on the ruler moves the playhead; on the strip it pans, as before. */
     private void timelineInput() {
-        if (im.modalOpen()) return;
+        if (im.modalOpen() || splitting) return;
         boolean in = im.hover(TX, TL_TOP, TW, TL_BOTTOM - TL_TOP);
-        if (in && im.wheel != 0f) wheelTime();
-        boolean onEdge = drag == D_NONE && in && im.my < R_UP - 2f && pvEdge(im.mx) != D_NONE;
+        if (in && im.wheel != 0f && !im.shift) wheelTime();
+        boolean strip = im.my >= R_AUDIO && im.my < R_ROWS;
+        boolean onEdge = drag == D_NONE && in && strip && pvEdge(im.mx) != D_NONE;
         if (onEdge || drag == D_PV_START || drag == D_PV_END) im.cursor(Cursor.SystemCursor.HorizontalResize);
-        if (in && im.pressed && drag == D_NONE && !im.popupOpen()) {
-            float my = im.my;
+        if (in && im.pressed && drag == D_NONE && !im.popupOpen() && im.my >= R_RULER && im.my < R_ROWS) {
             dMarked = false;
-            if (my < R_AUDIO + 14f && hitTempo(im.mx)) {
+            if (strip && im.my < R_AUDIO + 17f && hitTempo(im.mx)) {
                 insp.tab = Inspector.CHART;
             } else if (onEdge) {
                 drag = pvEdge(im.mx);
                 dPv0 = pvBeat(false);
                 dPv1 = pvBeat(true);
-            } else if (my < R_UP - 2f) {
+            } else if (strip) {
                 drag = D_PAN;
                 dPanBeat = beat;
                 dPanStart = tlStart;
                 dPanMoved = false;
                 dPanPlay = pb.playing();
-            } else if (my >= R_RULER) {
-                drag = D_SEEK;
-            } else if (my < R_FIELD) {
-                Doc.DKey hit = markerAt(im.mx, my);
-                if (hit != null) {
-                    boolean was = s.sel.contains(hit.uid);
-                    if (adding()) s.select(hit, true);
-                    else if (!was) s.select(hit, false);
-                    insp.tab = Inspector.NOTE;
-                    drag = D_TL_PRESS;
-                    dKey = was && !adding() ? hit : null;
-                } else {
-                    if (!adding()) s.sel.clear();
-                    drag = D_BOX;
-                }
-            } else {
-                drag = D_SEEK;
-                for (int i = 0; i < bars.size(); i++) {
-                    float[] b = bars.get(i);
-                    if (im.mx >= b[0] - 2f && im.mx <= b[1] + 2f) {
-                        insp.openFn(barIds.get(i));
-                        drag = D_NONE;
-                        break;
-                    }
-                }
-            }
+            } else drag = D_SEEK;
         }
         if (!im.down) return;
         if (drag == D_PAN) {
@@ -2047,21 +2457,6 @@ final class EditorScreen implements CharterApp.View {
             b = im.shift ? Math.round(b * 1000f) / 1000f : snap(b);
             if (drag == D_PV_START) dPv0 = Math.min(b, dPv1 - 1f);
             else dPv1 = Math.max(b, dPv0 + 1f);
-        } else if (drag == D_TL_PRESS && Math.abs(im.mx - im.pressX) > 4f) {
-            drag = D_TL_MOVE;
-            dKey = null;
-            dApplied = 0f;
-            dSel.clear();
-            dSel.addAll(s.selected());
-        } else if (drag == D_TL_MOVE) {
-            float by = snapDelta((float) (beatAtX(im.mx) - beatAtX(im.pressX)));
-            if (by != dApplied) {
-                lazyMark();
-                for (Doc.DKey k : dSel) Doc.shiftKey(k.k, by - dApplied);
-                dApplied = by;
-                s.doc.sortKeys();
-                s.changed(true);
-            }
         }
     }
 
@@ -2078,24 +2473,6 @@ final class EditorScreen implements CharterApp.View {
             if (mx >= x && mx <= x + 62f) return true;
         }
         return false;
-    }
-
-    private void commitBox() {
-        float x0 = Math.min(im.pressX, im.mx), x1 = Math.max(im.pressX, im.mx);
-        float y0 = Math.min(im.pressY, im.my), y1 = Math.max(im.pressY, im.my);
-        if (x1 - x0 < 3f && y1 - y0 < 3f) return;
-        for (Doc.DKey k : s.doc.keys) {
-            float j = k.judge();
-            if (!Float.isFinite(j) || hiddenFake(k)) continue;
-            float x = bx(j);
-            if (x < x0 || x > x1) continue;
-            boolean hit;
-            if (!k.k.kind.spans()) {
-                float y = markerY(k);
-                hit = y >= y0 && y <= y1;
-            } else hit = y1 >= rowTop(k.k.sky) && y0 <= rowTop(k.k.sky) + rowH(k.k.sky);
-            if (hit && s.sel.add(k.uid)) insp.tab = Inspector.NOTE;
-        }
     }
 
     // ================================================================== bars
@@ -2128,8 +2505,10 @@ final class EditorScreen implements CharterApp.View {
         g.line(bx, 14f, bx, 42f, 1f, Gfx.LINE);
         g.text("拍", bx + (TAB ? 12f : 14f), 28f, 12, Gfx.INK3);
         g.text(String.format(Locale.ROOT, "%.2f", beat), bx + (TAB ? 32f : 40f), 28f, 16, Gfx.INK1);
-        g.text("BPM", bx + (TAB ? 90f : 118f), 28f, 12, Gfx.INK3);
-        g.text(Im.fmt(s.doc.bpmAt(beat)), bx + (TAB ? 122f : 158f), 28f, 16, Gfx.BPM);
+        if (!TAB) keyButton(bx + 104f, 14f, 100f, 28f);              // on a tablet it is in the touch bar
+        float bp = bx + (TAB ? 90f : 216f);
+        g.text("BPM", bp, 28f, 12, Gfx.INK3);
+        g.text(Im.fmt(s.doc.bpmAt(beat)), bp + (TAB ? 32f : 40f), 28f, 16, Gfx.BPM);
 
         float sn = TAB ? 906f : 1456f;
         g.text("吸附", sn, 28f, 12, Gfx.INK3);
@@ -2165,6 +2544,12 @@ final class EditorScreen implements CharterApp.View {
     private void rail() {
         g.rect(0f, 56f, 64f, Gfx.H - 56f, Gfx.BAR);
         g.line(64f, 56f, 64f, Gfx.H, 1f, Gfx.LINE);
+        if (insp.tab == Inspector.SCENE) {                              // 选择, 方块, 阵列, 镜像, 成组
+            scene.rail();
+            return;
+        }
+        scene.arrayOn = false;
+        if (tool == T_BOX) tool = T_SELECT;
         for (int i = 0; i < TOOL_ORDER.length; i++) {
             int t = TOOL_ORDER[i];
             float y = TOOL_Y[i];
@@ -2190,7 +2575,7 @@ final class EditorScreen implements CharterApp.View {
 
     /** The tablet's row of buttons under the preview: what the keyboard does on the desktop. */
     private void touchBar() {
-        float x = PX, y = AB_Y, h = AB_H;
+        float x = PX0, y = AB_Y, h = AB_H;
         if (im.button("t-undo", x, y, 60f, h, "撤销", Im.NORMAL, 14)) undo();
         if (im.button("t-redo", x + 66f, y, 60f, h, "重做", Im.NORMAL, 14)) redo();
         x += 138f;
@@ -2205,16 +2590,17 @@ final class EditorScreen implements CharterApp.View {
         x += 316f;
         if (im.button("t-prev", x, y, 40f, h, "◀", Im.NORMAL, 14)) stepTime(-1);
         if (im.button("t-next", x + 46f, y, 40f, h, "▶", Im.NORMAL, 14)) stepTime(1);
+        keyButton(x + 92f, y, 104f, h);
         String n = (s.sel.isEmpty() ? "" : "已选 " + s.sel.size() + " · ") + "共 " + s.doc.keys.size();
-        g.text(n, SB_X - 10f, y + h * 0.5f, 12, Gfx.INK3, 2);
+        if (SB_X - 10f - g.width(n, 12) > x + 204f) g.text(n, SB_X - 10f, y + h * 0.5f, 12, Gfx.INK3, 2);
         if (im.button("stats", SB_X, SB_Y, SB_W, SB_H, "统计", statsOpen ? Im.ON : Im.NORMAL, 13)) statsOpen = !statsOpen;
     }
 
     /** The tablet's − / + by the timeline's ruler: zoom about the playhead, as Ctrl + wheel does. */
     private void zoomButtons() {
         float f = 0f;
-        if (im.button("t-out", 68f, R_RULER + 2f, 30f, 30f, "−", Im.NORMAL, 16)) f = 1.25f;
-        if (im.button("t-in", 102f, R_RULER + 2f, 30f, 30f, "+", Im.NORMAL, 16)) f = 0.8f;
+        if (im.button("t-out", 152f, R_AUDIO + 2f, 34f, AUDIO_H - 4f, "−", Im.NORMAL, 16)) f = 1.25f;
+        if (im.button("t-in", 190f, R_AUDIO + 2f, 34f, AUDIO_H - 4f, "+", Im.NORMAL, 16)) f = 0.8f;
         if (f == 0f) return;
         double px = (beat - tlStart) / tlSpan;
         tlSpan = Math.max(2.0, Math.min(512.0, tlSpan * f));
@@ -2282,18 +2668,38 @@ final class EditorScreen implements CharterApp.View {
         g.line(64f, TL_BOTTOM, TR, TL_BOTTOM, 1f, Gfx.LINE2);
         float x = 80f;
         x = keycap(x, "空格", "播放");
-        x = keycap(x, "点击", "放置");
-        x = keycap(x, "拖", "长度/移动");
-        x = keycap(x, "滚轮", "走时间");
-        x = keycap(x, "Ctrl+滚轮", "缩放");
-        x = keycap(x, "Ctrl+C/X/V/Z", "");
-        x = keycap(x, "Del", "删除");
-        x = keycap(x, "Tab", "天面/底面");
-        keycap(x, "Ctrl+Alt+拖", "转视角");
+        Group7 gr = s.doc.group(s.groupSel);
+        if (insp.tab == Inspector.SCENE && scene.arrayOn) {             // 阵列
+            x = keycap(x, "Enter", "确定");
+            x = keycap(x, "Esc", "取消");
+            x = keycap(x, "Ctrl+D", "复制一个");
+            x = keycap(x, "Ctrl+G", "成组");
+        } else if (insp.tab == Inspector.SCENE) {                       // 组 and the scene tools
+            x = keycap(x, "点", "选中整组");
+            x = keycap(x, "双击", "进组");
+            x = keycap(x, "拖箭头", "移动");
+            x = keycap(x, "拖圈", "旋转");
+            x = keycap(x, "B", "放方块");
+            x = keycap(x, "Ctrl+G", "成组");
+        } else {
+            x = keycap(x, "点击", "放置");
+            x = keycap(x, "拖", "长度/移动");
+            x = keycap(x, "滚轮", "走时间");
+            x = keycap(x, "Ctrl+滚轮", "缩放");
+            x = keycap(x, "Ctrl+C/X/V/Z", "");
+            x = keycap(x, "Del", "删除");
+            x = keycap(x, "Tab", "天面/底面");
+            x = keycap(x, "Ctrl+Alt+拖", "转视角");
+        }
+        keycap(x, "K", "关键帧");
         String right;
         Lane7 l = s.doc.lane(s.laneSel);
-        if (insp.tab == Inspector.LANE && l != null) {
-            right = "轨道 " + s.doc.laneLabel(l.id) + " · " + Doc.segCount(Doc.fns(l)) + " 段";
+        if (insp.tab == Inspector.SCENE && scene.arrayOn) {
+            right = "阵列 · " + (scene.circle ? "一圈 " : "一行 ") + Math.max(2, scene.count) + " 个";
+        } else if (insp.tab == Inspector.SCENE && gr != null) {
+            right = "组「" + Doc.groupLabel(gr) + "」 · " + Keyframes.points(Keyframes.group(gr)).length + " 个关键帧";
+        } else if ((insp.tab == Inspector.LANE || insp.tab == Inspector.SCENE) && l != null) {
+            right = "轨道 " + s.doc.laneLabel(l.id) + " · " + Keyframes.points(Keyframes.lane(l)).length + " 个关键帧";
         } else {
             right = "共 " + s.doc.keys.size() + " 个键" + (s.sel.isEmpty() ? "" : " · 已选 " + s.sel.size());
         }

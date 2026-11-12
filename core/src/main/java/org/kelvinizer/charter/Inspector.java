@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Cursor;
 import org.kelvinizer.elements.Chart7;
 import org.kelvinizer.elements.Fn;
+import org.kelvinizer.elements.Group7;
 import org.kelvinizer.elements.Key7;
 import org.kelvinizer.elements.KeyKind;
 import org.kelvinizer.elements.Lane7;
@@ -32,8 +33,8 @@ import java.util.List;
  * panel scrolls with the wheel, its scrollbar or a drag on empty space.
  */
 final class Inspector {
-    static final int CHART = 0, NOTE = 1, LANE = 2, CAMERA = 3, VOLUME = 4;
-    private static final String[] TABS = {"谱面", "音符", "轨道", "镜头", "幕布"};
+    static final int CHART = 0, NOTE = 1, LANE = 2, CAMERA = 3, VOLUME = 4, SCENE = 5;
+    private static final String[] TABS = {"谱面", "音符", "轨道", "镜头", "幕布", "场景"};
     private static final String[] FACES = {"天面", "底面"};
     private static final float TOP = 102f;
     private static final float X = EditorScreen.TR, CX = X + 19f, CW = Gfx.W - 18f - CX, FX = X + 101f,
@@ -42,9 +43,9 @@ final class Inspector {
     private static final String[] SHAPES = {"水滴", "水流", "Drag", "浪花", "潮汐"};
     /** A lane's functions in {@link Doc#fns} order: names and the curve window's tables. */
     private static final String[] LANE_FN = {"下落 x", "下落 y", "下落 z", "原点 x", "原点 y", "原点 z", "宽", "长",
-        "天面高度 S", "天面延申 s", "底面高度 F", "底面延申 f", "透明度"},
+        "天面高度 S", "天面延申 s", "底面高度 F", "底面延申 f", "透明度", "法向 x", "法向 y", "法向 z", "水雷", "轨道本身"},
         LANE_TABLE = {"下落向量", "下落向量", "下落向量", "原点", "原点", "原点", "底面", "底面", "高度", "延申", "高度", "延申",
-            "透明度"};
+            "透明度", "法向量", "法向量", "法向量", "水雷", "轨道本身"};
     private static final String[] VOL_FN = {"宽", "高", "深", "x", "y", "z", "x", "y", "z", "模糊"};
     /**
      * 下落向量的快捷方式 (Kelvin 2026-11-09 00:08「创建一些法向量快捷方式」): the slanted four 45° off straight down; the
@@ -117,6 +118,7 @@ final class Inspector {
         else if (id.startsWith("k-")) tab = NOTE;
         else if (id.startsWith("cam")) tab = CAMERA;
         else if (id.startsWith("v")) tab = VOLUME;
+        else if (id.startsWith("g")) tab = SCENE;
     }
 
     void draw() {
@@ -159,7 +161,8 @@ final class Inspector {
         else if (tab == NOTE) noteTab();
         else if (tab == LANE) laneTab();
         else if (tab == CAMERA) cameraTab();
-        else volumeTab();
+        else if (tab == VOLUME) volumeTab();
+        else sceneTab();
         contentH = y - y0 + 30f;
         im.popClip();
         // a press no widget took drags the panel
@@ -229,7 +232,10 @@ final class Inspector {
         float t = ed.snap(ed.beat), bw = 70f, fw = FW - bw - 6f;
         label(name);
         im.slash(Float.NaN, null, false);
-        float v = im.num(id, FX, y, fw, 30f, segs ? f.at(t) : f.constant, segs ? "播放头" : "");
+        boolean kf = segs && Keyframes.at(f, t);                        // a keyframe at the playhead (SPEC §3)
+        float v = im.num(id, FX, y, fw, 30f, segs ? f.at(t) : f.constant, segs ? (kf ? "◆ 播放头" : "播放头") : "",
+            kf ? Gfx.SYNC : null);
+        if (kf) g.text("◆ 播放头", FX + fw - 10f, y + 15f, 11, Gfx.SYNC, 2);
         if (!Float.isNaN(v)) {
             s.mark();
             Doc.setAt(f, t, v);
@@ -322,6 +328,159 @@ final class Inspector {
         if (beat) im.slash(now, Im.beatHint(now, zero != 0f ? "距判定 " : ""), true);
         else im.slash(Float.NaN, null, false);
         return im.num(id, x, y + 3f, w, 28f, v, "");
+    }
+
+    // ================================================================== 场景
+
+    /**
+     * 场景 (Kelvin 2026-11-11 16:39「有点像CAD」, 17:32「可以」): the picked group's card (组, chart 2.1): its name, 进组 and
+     * 解组, its centre, turn, size and opacity (each a function, keyed like any other); without one, how to make one.
+     */
+    private void sceneTab() {
+        Session s = ed.s;
+        Doc d = s.doc;
+        Group7 gr = d.group(s.groupSel);
+        Group7 inside = d.group(s.groupIn);
+        if (inside != null) {
+            g.box(CX, y, CW, 32f, 6f, Gfx.ITEM, Gfx.SYNC);
+            g.text(g.fit("已进组「" + Doc.groupLabel(inside) + "」：点一下是里面单条轨道", 12, CW - 96f), CX + 10f, y + 16f, 12,
+                Gfx.SYNC);
+            if (im.button("g-out", CX + CW - 80f, y + 3f, 76f, 26f, "出组 Esc", Im.GHOST, 12)) ed.leaveGroup();
+            y += 42f;
+        }
+        if (ed.scene.arrayOn) {
+            arrayCard();
+            return;
+        }
+        int picks = s.pickLanes.size() + s.pickGroups.size();
+        Lane7 lane = gr == null ? d.lane(s.laneSel) : null;
+        if (lane != null) {                                             // a single box is a lane: its own card
+            if (picks > 1) {
+                if (im.button("g-make3", CX, y, CW, 30f, "成组（Ctrl+G）：选中的 " + picks + " 个", Im.NORMAL, 12)) {
+                    ed.makeGroup();
+                }
+                y += 40f;
+            }
+            laneCard(s, d, lane);
+            return;
+        }
+        if (gr == null) {
+            title("组", d.groups.size() + " 个");
+            caption("在预览里点组里的轨道就选中整个组；双击进组，再点才是单条轨道。按住 Shift 点几条轨道或几个组，再按 Ctrl+G 成组。"
+                + "左边「方块」（B）在网格上点一下放一个；选中后拖箭头移动、拖黄圈旋转、拖白块缩放；「阵列」排一行或一圈，"
+                + "「镜像」左右对称复制一份，Ctrl+D 复制一个。");
+            if (im.button("g-make", CX, y, CW, 30f, picks > 0 ? "成组（Ctrl+G）：选中的 " + picks + " 个" : "成组（Ctrl+G）",
+                picks > 0 ? Im.NORMAL : Im.GHOST, 12) && picks > 0) ed.makeGroup();
+            y += 40f;
+            models();
+            return;
+        }
+        Group7 up = d.group(gr.p);
+        g.box(CX, y, CW, 34f, 6f, Gfx.ITEM_ON, Gfx.GND);
+        g.text(g.fit(Doc.groupLabel(gr), 14, 150f), CX + 12f, y + 17f, 14, Gfx.GND);
+        g.text(d.laneCount(gr.id) + " 条轨道" + (up != null ? " · 在「" + Doc.groupLabel(up) + "」里" : ""), CX + CW - 12f,
+            y + 17f, 12, Gfx.INK3, 2);
+        y += 42f;
+        String nv = text(new Im.Pair("g-name", gr.id), "名字", Doc.groupLabel(gr));
+        if (nv != null && !nv.trim().isEmpty() && !nv.trim().equals(Doc.groupLabel(gr))) {
+            s.mark();
+            gr.name = nv.trim();
+            s.changed(false);
+        }
+        float bw = CW - 94f;
+        if (im.button("g-in", CX, y, bw, 30f, s.groupIn == gr.id ? "已进组（Esc 出组）" : "进组，选单条轨道（也可以双击）",
+            Im.NORMAL, 12)) ed.enterGroup(gr.id);
+        if (im.button("g-un", CX + bw + 8f, y, 86f, 30f, "解组", Im.GHOST, 12)) ed.ungroup(gr.id);
+        y += 40f;
+        if (im.button("g-save", CX, y, CW, 30f, "保存为模型（所有谱都能导入）", Im.NORMAL, 12)) ed.scene.saveModel(gr);
+        y += 40f;
+        if (picks > 1) {
+            if (im.button("g-make2", CX, y, CW, 30f, "成组（Ctrl+G）：选中的 " + picks + " 个", Im.NORMAL, 12)) ed.makeGroup();
+            y += 40f;
+        }
+        divider();
+        String id = "g" + gr.id + "-";
+        title("位置（组的中心点）", "◆ = 播放头这一拍有关键帧");
+        fnRow(id + 0, "位置 x", gr.P.x, "位置");
+        fnRow(id + 1, "位置 y", gr.P.y, "位置");
+        fnRow(id + 2, "位置 z", gr.P.z, "位置");
+        title("旋转（度，绕中心点转）", null);
+        fnRow(id + 3, "绕 x", gr.R.x, "旋转");
+        fnRow(id + 4, "绕 y", gr.R.y, "旋转");
+        fnRow(id + 5, "绕 z", gr.R.z, "旋转");
+        title("缩放和透明度", null);
+        fnRow(id + 6, "缩放", gr.K, "缩放");
+        fnRow(id + 7, "透明度", gr.o, "透明度");
+        caption("组的位置、旋转、缩放、透明度加在里面每条轨道上；里面的轨道（和小组）自己的动作照旧，原点按组的坐标算。轨道上的键跟着组一起动。"
+            + "先转 z，再转 x，最后转 y。");
+        models();
+    }
+
+    /** 导入模型 (场景 page): the saved models; the one picked goes in as a new group. */
+    private void models() {
+        divider();
+        title("模型", "在 Charter 文件夹的 models 里");
+        List<String> ms = ed.s.lib.models();
+        String[] items = ms.isEmpty() ? new String[]{"（还没有保存的模型）"} : ms.toArray(new String[0]);
+        int r = im.dropdown("g-import", CX, y, CW, 30f, "导入模型", items, -1);
+        if (r >= 0 && r < ms.size()) ed.scene.importModel(ms.get(r));
+        y += 40f;
+        caption("选中一个组按「保存为模型」存下来，所有谱都能导入；导入的是新的一组（编号重新排），放在现在所在的组（或谱面）的原点。");
+    }
+
+    /**
+     * 阵列 (场景 page, Kelvin 2026-11-11 17:32): what is picked copied in a row or a ring; the preview shows the copies as
+     * amber ghosts until 确定.
+     */
+    private void arrayCard() {
+        SceneTools st = ed.scene;
+        Doc.Items it = st.picks(false);
+        g.box(CX, y, CW, 34f, 6f, Gfx.ITEM_ON, Gfx.BPM);
+        g.text("阵列", CX + 12f, y + 17f, 14, Gfx.BPM);
+        g.text(it == null ? "先选中轨道或组" : "选中：" + g.fit(st.pickName(it), 12, CW - 120f), CX + CW - 12f, y + 17f, 12,
+            Gfx.INK3, 2);
+        y += 42f;
+        label("方式");
+        st.circle = im.segmented("a-way", FX, y, FW, 30f, new String[]{"一行", "一圈"}, st.circle ? 1 : 0) == 1;
+        y += 38f;
+        float v = num("a-n", "数量", st.count, "包括原来这个");
+        if (!Float.isNaN(v)) st.count = Math.max(2, Math.min(500, Math.round(v)));
+        if (!st.circle) {
+            label("每个隔");
+            float w3 = (FW - 12f) / 3f;
+            float[] gap = {st.gapX, st.gapY, st.gapZ};
+            String[] ax = {"x", "y", "z"};
+            for (int i = 0; i < 3; i++) {
+                v = im.num("a-gap" + i, FX + i * (w3 + 6f), y, w3, 30f, gap[i], ax[i]);
+                if (!Float.isNaN(v)) gap[i] = v;
+            }
+            st.gapX = gap[0];
+            st.gapY = gap[1];
+            st.gapZ = gap[2];
+            y += 38f;
+        } else {
+            v = num("a-deg", "一共转", st.total, Math.abs(st.total) >= 360f ? "度（整圈）" : "度（两头都有）");
+            if (!Float.isNaN(v)) st.total = v;
+            label("绕");
+            st.axis = im.dropdown("a-axis", FX, y, FW, 30f, SceneTools.AXIS_LABELS[st.axis], SceneTools.AXIS_LABELS,
+                st.axis);
+            y += 38f;
+            String[] cs = it != null ? st.centreLabels(it) : new String[]{"原点 (0, 0, 0)"};
+            st.centre = Math.max(0, Math.min(cs.length - 1, st.centre));
+            label("中心");
+            st.centre = im.dropdown("a-centre", FX, y, FW, 30f, g.fit(cs[st.centre], 13, FW - 30f), cs, st.centre);
+            y += 38f;
+        }
+        String[] into = {"新组「" + st.groupName(it) + "」", "不放进组"};
+        label("放进");
+        st.into = im.dropdown("a-into", FX, y, FW, 30f, into[st.into], into, st.into);
+        y += 38f;
+        float bw = (CW - 8f) * 0.5f;
+        if (im.button("a-ok", CX, y, bw, 32f, "确定（Enter）", it != null ? Im.PRIMARY : Im.GHOST, 13)) st.applyArray();
+        if (im.button("a-no", CX + bw + 8f, y, bw, 32f, "取消（Esc）", Im.NORMAL, 13)) st.arrayOn = false;
+        y += 44f;
+        caption("「一圈」从选中的开始，围着中心排；「一行」填数量和每个隔多远（x、y、z）。预览里橙色虚线是确定后会放的位置，改数字马上跟着变。"
+            + "复制出来的是一样的轨道（大小、出现消失、动作都一样），不带键。");
     }
 
     // ================================================================== 谱面
@@ -968,6 +1127,15 @@ final class Inspector {
         g.text("此刻 宽 " + Math.round(l.w.at(t)) + " · 长 " + Math.round(l.h.at(t)), CX + CW - 12f, y + 17f, 12,
             Gfx.INK3, 2);
         y += 42f;
+        Group7 in = d.group(l.g);
+        if (in != null) {                                               // 组 (chart 2.1)
+            g.text(g.fit("在组「" + Doc.groupLabel(in) + "」里：原点、下落向量按组的坐标", 12, CW - 96f), CX, y + 15f, 12,
+                Gfx.INK2);
+            if (im.button(new Im.Pair("f-grp", l.id), CX + CW - 86f, y, 86f, 30f, "选中组", Im.GHOST, 12)) {
+                ed.pickGroup(in.id, false);
+            }
+            y += 38f;
+        }
         label("名字");
         String nv = im.field(new Im.Pair("f-name", l.id), FX, y, FW, 30f, d.laneLabel(l.id), "编号 " + l.id, false);
         y += 38f;
@@ -991,6 +1159,15 @@ final class Inspector {
         y += 38f;
         if (fall >= 0) setFall(s, l, fall);
         divider();
+        // Kelvin 2026-11-10 17:59「那就加一个法向量朝向」, 18:00「和下落向量一样」: written and edited like u
+        title("法向量 n（轨道正面朝哪边）", null);
+        for (int k = 13; k < 16; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
+        int face = im.dropdown("f-face", FX, y, FW, 30f, "快捷方向", FALL_NAMES, -1);
+        y += 38f;
+        if (face >= 0) setFacing(s, l, face);
+        caption(l.facing() ? "轨道绕自己的向上轴转，让正面尽量朝 n。和下落向量平行时不起作用。"
+            : "没写（默认朝你）：轨道按最短的转法转到下落方向，和以前一样。");
+        divider();
         title("原点 v（底面中心）", null);
         for (int k = 3; k < 6; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
         divider();
@@ -1003,6 +1180,32 @@ final class Inspector {
         divider();
         title("透明度", "1 不透明，0 看不见；轨道上的键也跟着乘");
         fnRow("l" + l.id + "-12", LANE_FN[12], fs[12], LANE_TABLE[12]);
+        // 轨道本身 l (Kelvin 2026-11-11 02:12「这种浪花水雷理论上也不能出现轨道」): the lane's own drawing, not its keys
+        fnRow("l" + l.id + "-17", LANE_FN[17], fs[17], LANE_TABLE[17]);
+        boolean bare = l.l.segs.isEmpty() && l.l.constant <= 0f;
+        if (im.button(new Im.Pair("f-bare", l.id), CX, y, CW, 30f, bare ? "显示轨道本身" : "只显示键（轨道本身不画）",
+                Im.NORMAL, 12)) {
+            s.mark();
+            l.l.segs.clear();
+            l.l.constant = bare ? 1f : 0f;
+            s.changed(false);
+        }
+        y += 40f;
+        caption("轨道本身只管轨道自己（柱子、面、判定线、边、光）的透明度，上面的键不跟着变；0 = 只显示键。");
+        divider();
+        // 水雷轨道 = 红色轨道 (Kelvin 2026-11-10 23:01「在一定时间内（一维事件）这些轨道会变红」; 2026-11-12 06:08: no
+        // longer a mine,「按到了，没有键，不加分，不断连击，不报lost，但是落在这种轨道上的键只能打出resonance」)
+        title("水雷", "大于 0 时整条轨道变红、强制严判");
+        fnRow("l" + l.id + "-16", LANE_FN[16], fs[16], LANE_TABLE[16]);
+        if (im.button(new Im.Pair("f-mine", l.id), CX, y, CW, 30f, "+ 从播放头变红 1 拍", Im.NORMAL, 12)) {
+            float at = ed.snap(ed.beat);
+            s.mark();
+            Doc.span(l.m, at, at + 1f, 1f);
+            s.changed(false);
+        }
+        y += 40f;
+        caption("0 是普通轨道；大于 0 时整条轨道变红（1 最红），强制严判：天面、底面上的键都只能打出 RESONANCE，"
+            + "按到没有键不扣分、不断连击、不报 LOST。按钮从播放头加 1 拍的红，结束拍可以在上面的段里改。");
     }
 
     /** 快捷方向 {@code k}: lane l's fall vector (its value at the playhead when it has segments). */
@@ -1015,6 +1218,19 @@ final class Inspector {
         Doc.setAt(l.u.x, t, f[0]);
         Doc.setAt(l.u.y, t, f[1]);
         Doc.setAt(l.u.z, t, f[2]);
+        s.changed(false);
+    }
+
+    /** 快捷方向 {@code k} for lane l's normal n, as {@link #setFall} for its fall (反过来: n turned round). */
+    private void setFacing(Session s, Lane7 l, int k) {
+        float t = ed.snap(ed.beat);
+        float[] f;
+        if (k < FALLS.length) f = FALLS[k];
+        else f = new float[]{-l.n.x.at(t), -l.n.y.at(t), -l.n.z.at(t)};
+        s.mark();
+        Doc.setAt(l.n.x, t, f[0]);
+        Doc.setAt(l.n.y, t, f[1]);
+        Doc.setAt(l.n.z, t, f[2]);
         s.changed(false);
     }
 
@@ -1182,7 +1398,7 @@ final class Inspector {
         }
         y += 40f;
         caption("默认在 (0, 0, −" + dist(Chart7.CAMERA_DIST) + ")，正对着画面。镜头节点 = 在播放头记下现在的位置；"
-            + "把播放头挪到后面再改数值，镜头就从节点移过去。预览里转视角只是看，不改镜头。");
+            + "把播放头挪到后面再改数值，镜头就从节点移过去。预览里转视角、Ctrl+Alt+方向键挪动只是看，不改镜头。");
         divider();
         title("视角", "上下看得见多少度，默认 11，1 到 150");
         fnRow("cam-3", "视角", d.fov, "视角");
