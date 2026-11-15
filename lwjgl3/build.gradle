@@ -22,6 +22,8 @@ sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
 // the game's fonts and LOST mark, for the preview's 实机 (the game's HUD and hit effects)
 processResources {
   from(new File(gameDir, 'assets')) { include 'fonts/**', 'ParticleEffects/lost.p' }
+  // a local .env beside the assets may hold API keys: it never goes into the jar
+  exclude '**/.env'
 }
 application.mainClass = 'org.kelvinizer.lwjgl3.Lwjgl3Launcher'
 application.applicationName = appName
