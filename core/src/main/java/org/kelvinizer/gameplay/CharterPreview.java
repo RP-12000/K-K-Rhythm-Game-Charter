@@ -3,11 +3,9 @@ package org.kelvinizer.gameplay;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import org.kelvinizer.elements.Channels;
 import org.kelvinizer.elements.Chart;
-import org.kelvinizer.elements.Lane;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
@@ -89,6 +87,8 @@ public final class CharterPreview {
     /** Fake clock for the engine: the preview sets the song time directly. */
     private long fakeNanos = 1_000_000_000L;
     private Chart chart;
+    /** The chart the notes last began: going back in it only rewinds them (their begin takes long on big charts). */
+    private Chart begun;
     private double engineMs = Double.NaN;
     private float runTime;
     private int syncHint = Settings.SYNC_HINT_HIGHLIGHT;
@@ -158,7 +158,8 @@ public final class CharterPreview {
 
     /**
      * Moves the preview to song time {@code ms} (judgement time). Going back restarts the
-     * autoplay run silently and replays it up to {@code ms} in one step.
+     * autoplay run silently and replays it up to {@code ms} in one step; the notes keep their
+     * tables while the chart is the same (Kelvin 2026-11-15「时间轴正向前进速度远高于倒退」).
      *
      * @param dt      seconds since the last frame (animations run only while playing)
      * @param playing true while the music plays (hit effects, waves)
@@ -209,7 +210,9 @@ public final class CharterPreview {
         engine.start();
         field.begin(chart);
         notes.setStyle(1f, true);
-        notes.begin(chart);
+        if (chart == begun) notes.rewind();
+        else notes.begin(chart);
+        begun = chart;
         trails.begin(chart);
         wash.clear();
         if (!live) return;
@@ -296,19 +299,22 @@ public final class CharterPreview {
                 if (completed) {
                     if (tide) wash.complete(engine, ev.note, line, ev.judgement == Judgement.RESONANCE, runTime);
                 } else {
-                    fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
+                    float k = sinkFx(-1, ev.x, sky ? ly - 120f : ly + 120f); // fills fxPt
+                    fx.lost(fxPt[0], fxPt[1], k);
                     if (!spanFlash(ev.note, line)) field.flash(line, ev.lane, false, runTime);
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     if (tide) wash.drain(engine, ev.note, line, runTime); // unless another one keeps it up
                 }
                 break;
             }
-            case GameEvent.LOST:
-                fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
+            case GameEvent.LOST: {
+                float k = sinkFx(-1, ev.x, sky ? ly - 120f : ly + 120f); // fills fxPt
+                fx.lost(fxPt[0], fxPt[1], k);
                 if (universal && !spanFlash(ev.note, line)) field.flashWindow(line, false, runTime);
                 else if (ev.lane >= 0) field.flash(line, ev.lane, false, runTime); // a DRAG off the lanes: none
                 hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                 break;
+            }
             case GameEvent.MINE:
                 feedback.mineShock(ev.touchX, ly, runTime);
                 field.flash(line, ev.lane, true, runTime);
@@ -351,39 +357,36 @@ public final class CharterPreview {
     }
 
     /**
-     * How much bigger key {@code note}'s hit effects show than a default key's, as GameplayScreen.keyFx (game 7.231,
-     * Kelvin 2026-11-10 04:35「把打击特效的大小和按键大小绑定」): its width over {@link Lane#DEFAULT_WIDTH}, 1 to 4.
+     * How much bigger key {@code note}'s hit effects show than a default key's: the game's own
+     * {@link GameplayScreen#keyFx} (game 7.231, Kelvin 2026-11-10 04:35「把打击特效的大小和按键大小绑定」; no upper
+     * bound since 7.245, Kelvin 2026-11-15「打击特效怎么那么小，轨道不是很大吗」).
      */
     private float keyFx(int note) {
-        if (note < 0) return 1f;
-        LaneLayout lay = engine.layout();
-        return MathUtils.clamp(lay.keyWidth(chart.note(note)) / (Lane.DEFAULT_WIDTH * lay.unitX()), 1f, 4f);
+        return note < 0 ? 1f : GameplayScreen.keyFx(engine.layout(), chart.note(note));
     }
 
     /**
      * Puts into {@link #fxPt} where the hit effect of note {@code note} at (x, y) shows, as GameplayScreen.sinkFx does
      * (game 7.209 – 7.217): at its column's middle and its own depth, drawn on the effects' plane towards the eye,
-     * through its turned lane or sea when it is on one.
+     * through its turned lane or sea when it is on one; without a note (−1) the point (x, y) of the flat picture at the
+     * columns' middle (a LOST mark). The effects' plane faces the camera (Kelvin 2026-11-15 06:08
+     * 「328拍粒子特效有纵深错位问题」).
      *
-     * @return the effect's size factor: 1 at the columns' depth, without a note or while the view is off
+     * @return the effect's size factor: 1 at the columns' depth facing straight and while the view is off; 0 behind the
+     *         eye (nothing of it shows)
      */
     private float sinkFx(int note, float x, float y) {
         fxPt[0] = x;
         fxPt[1] = y;
-        if (note < 0 || !drawn3D || !view.active()) return 1f;
+        if (!drawn3D || !view.active()) return 1f;
+        if (note < 0) return view.frameFx(-1, x, y, 0f, fxPt);
         Note n = chart.note(note);
         LaneLayout lay = engine.layout();
         // at its column's middle, its origin (game 7.217: a base shorter than 240 brings its front in)
         float own = Channels.at(n.space(), Channels.SOLID, Channels.Z, engine.visualBeat())
             - 0.5f * (LaneLayout.DEFAULT_LENGTH - lay.keyLength(n));
-        int f = view.keyFrame(lay, n);
-        if (f >= 0) return view.frameFx(f, x, y, own, fxPt);     // on its turned lane or sea (game 7.216)
-        float z = lay.keyMoveZ(n) + own;
-        if (z == 0f) return 1f;
-        float t = view.sinkMiddle(z);
-        fxPt[0] = view.eyeX() + (x - view.eyeX()) * t;
-        fxPt[1] = view.eyeY() + (y - view.eyeY()) * t;
-        return t;
+        int f = view.keyFrame(lay, n); // on its turned lane or sea (game 7.216): its frame
+        return view.frameFx(f, x, y, f >= 0 ? own : lay.keyMoveZ(n) + own, fxPt);
     }
 
     /** Puts where the effects of STREAM {@code note} start into {@link #basePt}: its key's hit point as drawn now. */

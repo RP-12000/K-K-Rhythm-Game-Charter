@@ -31,7 +31,8 @@ import java.util.Locale;
  * dragging keys in the preview, undo / redo, copying a lane with its keys, the six views, the stats and the checks,
  * moving the view by Ctrl+Alt + the arrows, saves, checks the file reads back unchanged; then on an old chart the
  * keyframes and the layered timeline (K, a bar's ease, dragging a ◆, a lane's life bar, placing a key in its row,
- * 只看选中, 搜索轨道, the line above the timeline); writes one screenshot per step and a log, then exits.
+ * 只看选中, 搜索轨道, the line above the timeline), groups and the 场景 page, 角度 R and 路点 (a ring's turn, chart 2.2);
+ * writes one screenshot per step and a log, then exits.
  */
 final class AutoTest {
     private final CharterApp app;
@@ -127,9 +128,9 @@ final class AutoTest {
             case 120: kfLaneNew(e); break;
             case 122: app.im.keyDown(Input.Keys.K); break;
             case 123: app.im.keyUp(Input.Keys.K); kfAdded(e); break;
-            case 125: kfClick(e, "原点 v", kfT + 1f); break;           // its bar: the ease strip
+            case 125: kfClick(e, "位置", kfT + 1f); break;           // its bar: the ease strip
             case 128: kfTile(e); break;
-            case 130: kfEased(e); kfPress(e, "原点 v", kfT + 2f); break;
+            case 130: kfEased(e); kfPress(e, "位置", kfT + 2f); break;
             case 131: case 132: kfDrag(e, kfT + 3f); break;
             case 133: app.im.touchUp(at[0], at[1], 0, Input.Buttons.LEFT); break;
             case 134: kfRetimed(e); break;
@@ -179,7 +180,15 @@ final class AutoTest {
             case 190: app.im.touchUp(at[0], at[1], 0, Input.Buttons.LEFT); break;
             case 191: scnMoved(e); break;
             case 194: scnMirrorModel(e); break;
-            case 196: finish(); break;
+            case 195: angLogic(e); break;                               // 角度 R and 路点 (chart 2.2)
+            case 196: angPick(e); break;
+            case 197: app.im.keyUp(Input.Keys.E); expect("E: 旋转", e.scene.mode, 1f); break;
+            case 199: angPress(e); break;
+            case 200: angDrag(e, 50f); break;
+            case 201: angDrag(e, 75f); break;
+            case 203: app.im.touchUp(at[0], at[1], 0, Input.Buttons.LEFT); break;
+            case 204: angTurned(e); break;
+            case 207: e.orbitYaw = e.orbitPitch = 0f; e.scene.mode = 0; finish(); break;
             default:
         }
     }
@@ -217,6 +226,8 @@ final class AutoTest {
             case 169: shot("v25_group_entered"); break;
             case 185: shot("v26_array"); break;
             case 192: shot("v27_scene"); break;
+            case 201: shot("v28_ring_drag"); break;
+            case 205: shot("v29_waypoints"); break;
             default:
         }
     }
@@ -651,8 +662,8 @@ final class AutoTest {
                     expect("old chart: nothing left unsaved", ses.dirty ? 1 : 0, 0);
                     // older 2.x files too (Kelvin 2026-11-11 02:36「后续每次更新一个版本的时候，你都要确保其他人第一次打开旧谱自动存成最新版本」):
                     // a 2.0 one, a 2.1 one whose format is still a number (04:14「文件里的format也改成2.0」) and a
-                    // "2.2" one (2026-11-12 06:06「2.2文件记得读取的时候全部把版本调回2.1」)
-                    for (String was : new String[]{"\"2.0\"", "9", "\"2.2\""}) {
+                    // "2.1" one (the version before 角度, 2026-11-14)
+                    for (String was : new String[]{"\"2.0\"", "9", "\"2.1\""}) {
                         String now = f.readString("UTF-8");
                         String older = now.replaceFirst("\"format\"\\s*:\\s*(\"[^\"]*\"|\\d+)", "\"format\": " + was);
                         f.writeString(older, false, "UTF-8");
@@ -691,10 +702,10 @@ final class AutoTest {
 
     private Keyframes.Group[] kfGroups(EditorScreen e) {
         Lane7 l = e.s.doc.lane(kfLane);
-        return l != null ? Keyframes.position(Keyframes.lane(l), 3) : new Keyframes.Group[0];
+        return l != null ? Keyframes.laneKeyed(l) : new Keyframes.Group[0];
     }
 
-    /** @return the lane's 原点 v group */
+    /** @return the lane's 位置 group (its origin v) */
     private Keyframes.Group kfOrigin(EditorScreen e) {
         return Keyframes.lane(e.s.doc.lane(kfLane))[0];
     }
@@ -710,7 +721,7 @@ final class AutoTest {
         expect("new lane: keyframes", Keyframes.points(kfGroups(e)).length, 0);
     }
 
-    /** After K: a keyframe at the playhead on 原点 v, 下落向量 u and 宽长 a, nothing moved; its layer open. */
+    /** After K: a keyframe at the playhead on 位置, 角度, 宽长 a and 天面高度 S (its 路点), nothing moved; its layer open. */
     private void kfAdded(EditorScreen e) {
         Keyframes.Group[] gs = kfGroups(e);
         expect("K: a keyframe at the playhead", Keyframes.on(gs, kfT) ? 1 : 0, 1);
@@ -1106,6 +1117,117 @@ final class AutoTest {
         expect("模型: saved and put back as a new group of 4", (saved ? 1 : 0) + (d.groups.size() - n)
             + (in != null && in != g ? d.laneCount(in.id) : 0), 6f);
         e.s.lib.home.child("models").child("自测模型.json").delete();
+    }
+
+    // ---- 角度 R and 路点 (Kelvin 2026-11-13「这个关键帧只能调动位置不能调动角度」, 2026-11-14「A可以」, chart 2.2)
+
+    /** The 路点 the ring turns at and another one; the lane's 角度 y at each before. */
+    private float angBeat, angOther, angNext, angR0, angOtherR, angNextR;
+
+    /** 角度 R: copied, written and read by the game, turning the lane; the rings' sums; 阵列's turn and 镜像 carry it. */
+    private void angLogic(EditorScreen e) {
+        Lane7 l = new Lane7(1, 0f);
+        l.R.y.constant = 45f;
+        expect("角度: copyLane keeps it", Doc.copyLane(l).R.y.constant, 45f);
+        Chart7 c = new Chart7();
+        c.lanes.add(l);
+        try {
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            ChartFormatV7.write(c, b);
+            Lane7 r = ChartFormatV7.read(new java.io.ByteArrayInputStream(b.toByteArray())).lanes.get(0);
+            expect("角度: the game writes and reads it", r.R.y.constant, 45f);
+        } catch (java.io.IOException ex) {
+            fail("角度: write / read " + ex);
+        }
+        float[] lf = new float[Scene.LF];
+        Scene.laneFrame(l, 0f, lf);
+        expect("角度: y 45 turns its across axis toward −z", Math.round(lf[Scene.A + 2] * 100f) / 100f, -0.71f);
+        float[] r = Doc.turnBy(new float[]{0f, 45f, 0f}, 1, 540f, false, null);
+        expect("转圈: about y adds to y (one and a half turns more)", r[1], 585f);
+        r = Doc.turnBy(new float[]{0f, 45f, 0f}, 2, 90f, true, null);
+        expect("转圈: 自身 z of a group turned about y adds to z", r[0] + r[2], 90f);
+        r = Doc.turnBy(new float[]{0f, 45f, 0f}, 0, 90f, false, null);
+        float[] want = Doc.mul(Doc.turnOf(90f, 0f, 0f), Doc.turnOf(0f, 45f, 0f)), got = Doc.turnOf(r[0], r[1], r[2]);
+        float most = 0f;
+        for (int i = 0; i < 9; i++) most = Math.max(most, Math.abs(got[i] - want[i]));
+        expect("转圈: 世界 x after y, worked out into angles", Math.round(most * 100f) / 100f, 0f);
+        Lane7 t = new Lane7(2, 100f);
+        t.R.x.constant = 30f;
+        float[] before = new float[9], after = new float[9], m = Doc.turnOf(0f, 90f, 0f);
+        t.axes(0f, before);
+        Doc.Items it = new Doc.Items();
+        it.lanes.add(t);
+        e.s.doc.turn(it, m, new float[3]);
+        t.axes(0f, after);
+        most = 0f;
+        for (int v = 0; v < 3; v++) {
+            for (int i = 0; i < 3; i++) {
+                float w = m[3 * i] * before[3 * v] + m[3 * i + 1] * before[3 * v + 1]
+                    + m[3 * i + 2] * before[3 * v + 2];
+                most = Math.max(most, Math.abs(after[3 * v + i] - w));
+            }
+        }
+        expect("阵列: a lane with 角度 turns as a whole", Math.round(most * 100f) / 100f, 0f);
+        float rz = t.R.z.constant;
+        e.s.doc.mirror(it);
+        expect("镜像: 角度 z goes back", t.R.z.constant + rz, 0f);
+    }
+
+    /** The lane of the keyframe steps on the 轨道 page, the playhead on its 2nd 路点, the view from above; E: 旋转. */
+    private void angPick(EditorScreen e) {
+        Lane7 l = e.s.doc.lane(kfLane);
+        float[] ts = l != null ? Keyframes.points(Keyframes.laneKeyed(l)) : new float[0];
+        if (ts.length < 2) {
+            fail("角度: the lane has " + ts.length + " 路点");
+            return;
+        }
+        e.s.sel.clear();
+        e.s.groupSel = e.s.groupIn = 0;
+        e.s.laneSel = kfLane;
+        e.insp.tab = Inspector.LANE;
+        e.setTool(EditorScreen.T_SELECT);
+        e.viewPreset = -1;
+        e.orbitYaw = 20f;
+        e.orbitPitch = 35f;
+        angBeat = ts[1];
+        angOther = ts[0];
+        angNext = ts[ts.length > 2 ? ts.length - 1 : 0];
+        e.seekBeat(angBeat);
+        angR0 = l.R.y.at(angBeat);
+        angOtherR = l.R.y.at(angOther);
+        angNextR = l.R.y.at(angNext);
+        app.im.keyDown(Input.Keys.E);
+    }
+
+    /** Presses ring y 30° round (not where it crosses the others). */
+    private void angPress(EditorScreen e) {
+        float[] p = e.scene.ringOnScreen(1, 30f);
+        if (p == null) {
+            fail("转圈: ring y on screen");
+            at = new int[]{0, 0};
+            return;
+        }
+        at = new int[]{Math.round(p[0]), Math.round(p[1])};
+        app.im.touchDown(at[0], at[1], 0, Input.Buttons.LEFT);
+    }
+
+    private void angDrag(EditorScreen e, float deg) {
+        float[] p = e.scene.ringOnScreen(1, deg);
+        if (p == null) return;
+        at = new int[]{Math.round(p[0]), Math.round(p[1])};
+        app.im.touchDragged(at[0], at[1], 0);
+    }
+
+    /** Ring y dragged 45° round: 角度 y 45 more at the playhead's 路点 only; then its 路点 card open. */
+    private void angTurned(EditorScreen e) {
+        Lane7 l = e.s.doc.lane(kfLane);
+        if (l == null) return;
+        expect("转圈: ring y dragged 45° (吸附 15°), at the playhead's 路点", l.R.y.at(angBeat) - angR0, 45f);
+        expect("转圈: the 路点 before keeps its angle", l.R.y.at(angOther), angOtherR);
+        expect("转圈: the last 路点 keeps its angle too", l.R.y.at(angNext), angNextR);
+        expect("转圈: about y only", Math.abs(l.R.x.at(angBeat)) + Math.abs(l.R.z.at(angBeat)), 0f);
+        e.insp.wpOpen = 1;
+        e.insp.scroll[Inspector.LANE] = 0f;
     }
 
     /** @return where key k is half a beat before its judgement (chart axes) */

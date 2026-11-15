@@ -43,9 +43,15 @@ final class Inspector {
     private static final String[] SHAPES = {"水滴", "水流", "Drag", "浪花", "潮汐"};
     /** A lane's functions in {@link Doc#fns} order: names and the curve window's tables. */
     private static final String[] LANE_FN = {"下落 x", "下落 y", "下落 z", "原点 x", "原点 y", "原点 z", "宽", "长",
-        "天面高度 S", "天面延申 s", "底面高度 F", "底面延申 f", "透明度", "法向 x", "法向 y", "法向 z", "水雷", "轨道本身"},
+        "天面高度 S", "天面延申 s", "底面高度 F", "底面延申 f", "透明度", "法向 x", "法向 y", "法向 z", "水雷", "轨道本身",
+        "角度 x", "角度 y", "角度 z"},
         LANE_TABLE = {"下落向量", "下落向量", "下落向量", "原点", "原点", "原点", "底面", "底面", "高度", "延申", "高度", "延申",
-            "透明度", "法向量", "法向量", "法向量", "水雷", "轨道本身"};
+            "透明度", "法向量", "法向量", "法向量", "水雷", "轨道本身", "角度", "角度", "角度"};
+    /** The 路点 card: the rings' colours for x, y and z, its rows, and the eases of the timeline's strip. */
+    private static final Color[] AXIS = {EditorScreen.AX_X, EditorScreen.AX_Y, EditorScreen.AX_Z};
+    private static final String[] WP_ROWS = {"位置", "角度", "大小"};
+    private static final String[][] WP_NAMES = {{"x", "y", "z"}, {"x", "y", "z"}, {"宽", "长", "高"}};
+    private static final String[] EASE_LABELS = {"先快后慢 0.33", "先快后慢 0.5", "匀速", "先慢后快 2", "先慢后快 3"};
     private static final String[] VOL_FN = {"宽", "高", "深", "x", "y", "z", "x", "y", "z", "模糊"};
     /**
      * 下落向量的快捷方式 (Kelvin 2026-11-09 00:08「创建一些法向量快捷方式」): the slanted four 45° off straight down; the
@@ -241,7 +247,7 @@ final class Inspector {
             Doc.setAt(f, t, v);
             s.changed(false);
         }
-        String bl = segs ? f.segs.size() + " 段 " + (isOpen ? "▴" : "▾") : "+ 分段";
+        String bl = segs ? f.segs.size() + " 段 " + (isOpen ? "▲" : "▼") : "+ 分段";
         if (im.button(id + "-open", FX + fw + 6f, y, bw, 30f, bl, isOpen ? Im.ON : Im.GHOST, 12)) {
             if (!segs) {
                 s.mark();
@@ -1152,6 +1158,8 @@ final class Inspector {
         y += 40f;
         lifeRows(s, d, l);
         divider();
+        waypoints(s, l);
+        divider();
         title("下落向量 u（键往哪个方向落）", null);
         Fn[] fs = Doc.fns(l);
         for (int k = 0; k < 3; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
@@ -1170,6 +1178,12 @@ final class Inspector {
         divider();
         title("原点 v（底面中心）", null);
         for (int k = 3; k < 6; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
+        divider();
+        // 角度 R (Kelvin 2026-11-13「这个关键帧只能调动位置不能调动角度」, chart 2.2): turned about its origin after u and n
+        title("角度 R（绕原点转，度）", "x 红 · y 绿 · z 蓝");
+        for (int k = 18; k < 21; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
+        caption("下落向量、法向量摆好以后，再绕原点转（0 = 不转，旧谱都是 0）。转法和组的旋转一样：先绕 z，再绕 x，再绕 y。"
+            + "在预览按 E 拖三色圈转；一段里 0 → 540 就是转一圈半。");
         divider();
         title("底面大小 a（宽 × 长）", null);
         for (int k = 6; k < 8; k++) fnRow("l" + l.id + "-" + k, LANE_FN[k], fs[k], LANE_TABLE[k]);
@@ -1206,6 +1220,135 @@ final class Inspector {
         y += 40f;
         caption("0 是普通轨道；大于 0 时整条轨道变红（1 最红），强制严判：天面、底面上的键都只能打出 RESONANCE，"
             + "按到没有键不扣分、不断连击、不报 LOST。按钮从播放头加 1 拍的红，结束拍可以在上面的段里改。");
+    }
+
+    // ================================================================== 路点 (Kelvin 2026-11-14「A可以」)
+
+    /** The 路点 card's open row (-1 none) and whose it is. */
+    int wpOpen = -1, wpLane;
+
+    /**
+     * 路点（关键帧） (the 编辑运动路点 of the video Kelvin sent 2026-11-13, mockup 2mEUULdT 「A可以」 2026-11-14): lane l's
+     * 路点 ({@link Keyframes#laneKeyed}: 位置, 角度 and 大小 keyed together), a row each: ▶ to it, 删 takes it off, ▾ its
+     * numbers there; then 「◇+ 新增路点」 (K) and 「复制当前路点」 (the open one at the playhead).
+     */
+    private void waypoints(Session s, Lane7 l) {
+        Keyframes.Group[] gs = Keyframes.laneKeyed(l);
+        float[] ts = Keyframes.points(gs);
+        if (wpLane != l.id) {
+            wpLane = l.id;
+            wpOpen = -1;
+        }
+        if (wpOpen >= ts.length) wpOpen = -1;
+        title("路点（关键帧）", (ts.length > 0 ? ts.length + " 个 · " : "") + "位置 角度 大小 一起记");
+        float now = ed.snap(ed.beat);
+        for (int i = 0; i < ts.length; i++) {
+            float b = ts[i];
+            boolean opened = i == wpOpen, here = Math.abs(b - now) < Keyframes.EPS;
+            g.box(CX, y, CW, 34f, 6f, opened || here ? Gfx.ITEM_ON : Gfx.ITEM, here ? Gfx.SYNC : Gfx.ITEM_LINE);
+            g.text(Keyframes.circled(i), CX + 16f, y + 17f, 14, i == 0 ? Gfx.SYNC : Gfx.INK2, 1);
+            g.text(i == 0 ? "起点" : "路点", CX + 34f, y + 17f, 13, Gfx.INK1);
+            g.text(Im.fmt(b) + " 拍", CX + 76f, y + 17f, 13, Gfx.INK1);
+            if (i > 0) g.text("上一个之后 " + Im.fmt(b - ts[i - 1]) + " 拍", CX + 150f, y + 17f, 12, Gfx.INK3);
+            float bx = CX + CW - 102f;
+            if (im.button(new Im.Pair("wp-go", i), bx, y + 2f, 30f, 30f, "▶", Im.GHOST, 12)) ed.seekBeat(b);
+            if (im.button(new Im.Pair("wp-del", i), bx + 34f, y + 2f, 30f, 30f, "删", Im.GHOST, 12)) {
+                dropWaypoint(s, gs, b);
+            }
+            if (im.button(new Im.Pair("wp-open", i), bx + 68f, y + 2f, 30f, 30f, opened ? "▲" : "▼", Im.GHOST, 12)) {
+                wpOpen = opened ? -1 : i;
+            }
+            y += 38f;
+            if (opened && i < ts.length) waypointBody(s, l, gs, ts, i);
+        }
+        if (ts.length == 0) {
+            caption("还没有路点：把播放头拖到一拍按 K（或下面的「◇+ 新增路点」），这一刻的位置、角度、大小就记下来了。");
+        }
+        boolean on = Keyframes.on(gs, now);
+        float bw = (CW - 8f) / 2f;
+        if (im.button("wp-add", CX, y, bw, 32f, on ? "◆− 去掉这个路点  K" : "◇+ 新增路点  K", Im.PRIMARY, 12)) {
+            ed.keyframe();
+        }
+        if (im.button("wp-copy", CX + bw + 8f, y, bw, 32f, "复制当前路点", wpOpen >= 0 ? Im.NORMAL : Im.GHOST, 12)) {
+            if (wpOpen >= 0 && wpOpen < ts.length) copyWaypoint(s, gs, ts[wpOpen], wpOpen);
+            else im.toast("先点一个路点右边的 ▼ 展开它，再复制到播放头");
+        }
+        y += 40f;
+        caption("新增路点：在播放头记下这一刻的位置、角度、大小。复制当前路点：把展开的那个路点原样放到播放头。"
+            + "在预览按 E 拖三色圈转角度，松手记在播放头那一拍。");
+    }
+
+    /** The open 路点's 位置 / 角度 / 大小 (a number with a keyframe there framed in amber) and its ease to the next. */
+    private void waypointBody(Session s, Lane7 l, Keyframes.Group[] gs, float[] ts, int i) {
+        float b = ts[i], fw = (CW - 70f) / 3f - 6f;
+        boolean next = i + 1 < ts.length;
+        Fn[][] fns = {{l.v.x, l.v.y, l.v.z}, {l.R.x, l.R.y, l.R.z}, {l.w, l.h, l.S}};
+        g.box(CX, y, CW, next ? 158f : 122f, 6f, Gfx.FIELD, Gfx.ITEM_LINE);
+        y += 6f;
+        for (int r = 0; r < 3; r++) {
+            g.text(WP_ROWS[r], CX + 12f, y + 15f, 13, Gfx.INK2);
+            for (int k = 0; k < 3; k++) {
+                Fn f = fns[r][k];
+                boolean tall = r == 2 && k == 2;                        // 高: the 天面 over the 底面
+                float val = tall ? f.at(b) - l.F.at(b) : f.at(b), fx = CX + 60f + k * (fw + 6f);
+                g.text(WP_NAMES[r][k], fx + 6f, y + 15f, 12, r < 2 ? AXIS[k] : Gfx.INK3);
+                float v = im.num(new Im.Pair("wp-" + r, k), fx + 24f, y, fw - 24f, 30f, val, r == 1 ? "°" : "",
+                    Keyframes.at(f, b) ? Gfx.SYNC : null);
+                if (Float.isNaN(v) || v == val) continue;
+                s.mark();
+                Keyframes.seed(gs[r < 2 ? r : k == 2 ? 3 : 2], gs);     // only this 路点 changes
+                Doc.setAt(f, b, tall ? l.F.at(b) + v : v);
+                s.changed(false);
+            }
+            y += 36f;
+        }
+        if (next) {
+            float e = Float.NaN;
+            for (Keyframes.Group gr : gs) if (Float.isNaN(e)) e = Keyframes.easeOf(gr, b, ts[i + 1]);
+            int sel = -1;
+            for (int k = 0; k < Layers.EASES.length; k++) if (Math.abs(Layers.EASES[k] - e) < 1e-3f) sel = k;
+            g.text("到 " + Keyframes.circled(i + 1), CX + 12f, y + 15f, 13, Gfx.INK2);
+            String cur = sel >= 0 ? EASE_LABELS[sel] : Float.isNaN(e) ? "这段不动" : "缓动 " + Im.fmt(e);
+            int pick = im.dropdown(new Im.Pair("wp-ease", i), CX + 60f, y, 150f, 30f, cur, EASE_LABELS, sel);
+            if (pick != sel && pick >= 0) {
+                s.mark();
+                for (Keyframes.Group gr : gs) Keyframes.ease(gr, b, ts[i + 1], Layers.EASES[pick]);
+                s.changed(false);
+            }
+            g.text("就是时间轴上点紫条出来的缓动", CX + 222f, y + 15f, 11, Gfx.INK3);
+            y += 36f;
+        }
+        y += 8f;
+        caption("黄框 = 这个数在 " + Keyframes.circled(i) + " 有关键帧。改一个数只改这个路点（别的路点不变）。");
+    }
+
+    /** 删 on a 路点's row: its keyframes come off, as 「◆− 关键帧」 there. */
+    private void dropWaypoint(Session s, Keyframes.Group[] gs, float b) {
+        boolean can = false;
+        for (Keyframes.Group gr : gs) can |= Keyframes.canRemove(gr, b);
+        if (!can) return;
+        s.mark();
+        for (Keyframes.Group gr : gs) if (Keyframes.canRemove(gr, b)) Keyframes.remove(gr, b);
+        s.changed(false);
+        wpOpen = -1;
+    }
+
+    /** 复制当前路点: 路点 {@code i} (at beat b) as it is, a 路点 at the playhead. */
+    private void copyWaypoint(Session s, Keyframes.Group[] gs, float b, int i) {
+        float t = ed.snap(ed.beat);
+        if (Math.abs(t - b) < Keyframes.EPS) {
+            im.toast("播放头就在这个路点上：先把播放头挪到要放的那一拍");
+            return;
+        }
+        s.mark();
+        for (Keyframes.Group gr : gs) {
+            float[] v = new float[gr.fns.length];
+            for (int k = 0; k < v.length; k++) v[k] = gr.fns[k].at(b);
+            Keyframes.add(gr, t);
+            for (int k = 0; k < v.length; k++) if (Keyframes.at(gr.fns[k], t)) Doc.setAt(gr.fns[k], t, v[k]);
+        }
+        s.changed(false);
+        im.toast("已把路点 " + Keyframes.circled(i) + " 复制到第 " + Im.fmt(t) + " 拍");
     }
 
     /** 快捷方向 {@code k}: lane l's fall vector (its value at the playhead when it has segments). */

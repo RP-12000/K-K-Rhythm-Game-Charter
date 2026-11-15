@@ -204,6 +204,11 @@ final class EditorScreen implements CharterApp.View {
      * their 编号 instead of their names, in the preview and in the lane chips; names stay in the lane card.
      */
     boolean laneIds;
+    /**
+     * 「显示：隐藏」 (Kelvin 2026-11-15 05:43「添加一个隐藏编号吧」): no label under the lanes in the preview, the lane chips
+     * keep their 编号; what the editor starts with (06:18「默认不显示轨道编号或者名称」).
+     */
+    boolean laneHide = true;
     private final Color fakeInk = new Color();
     static final Color AX_X = Gfx.c(0xFF6B81), AX_Y = Gfx.c(0x7BE0A0), AX_Z = Gfx.c(0x6FB8FF);
     /** Preview sync hint, in the order of the game's Settings.syncHint values. */
@@ -467,6 +472,9 @@ final class EditorScreen implements CharterApp.View {
         if (im.key(Input.Keys.G)) setTool(T_DRAG);
         if (im.key(Input.Keys.TAB)) s.placeSky = !s.placeSky;
         if (im.key(Input.Keys.K)) keyframe();
+        for (int m = 0; m < 3 && scene.stripOn(); m++) {                // 工具条: 移动 W, 旋转 E, 缩放 R
+            if (im.key(m == 0 ? Input.Keys.W : m == 1 ? Input.Keys.E : Input.Keys.R)) scene.setMode(m);
+        }
         if (im.key(Input.Keys.FORWARD_DEL) || im.key(Input.Keys.DEL)) {
             if (curves.on && curves.focus && curves.deleteKey()) return;
             if (insp.tab == Inspector.VOLUME && s.volSel != 0) deleteVol();
@@ -1034,10 +1042,10 @@ final class EditorScreen implements CharterApp.View {
         im.toast("已在第 " + Im.fmt(t) + " 拍加镜头节点：(" + Im.fmt(p[0]) + ", " + Im.fmt(p[1]) + ", " + Im.fmt(p[2]) + ")");
     }
 
-    /** 新建漩涡 / 水帘: at the origin, from the playhead for {@link #VOL_BEATS} beats; it is selected. */
     /**
-     * @return what the 关键帧 button keys now (SPEC §1): the selected lane's 原点 v, 下落向量 u and 宽长 a, the camera's P
-     *         and 视角, the selected veil's or curtain's 中心 and 大小, or the one selected key's h; null with none
+     * @return what the 关键帧 button keys now (SPEC §1): the selected lane's 路点 (位置, 角度 and 大小: 宽长 a and 天面高度 S,
+     *         Kelvin 2026-11-14「A可以」), a group's 位置, 旋转 and 缩放, the camera's P and 视角, the selected veil's or
+     *         curtain's 中心 and 大小, or the one selected key's h; null with none
      */
     Keyframes.Group[] keyGroups() {
         Doc d = s.doc;
@@ -1045,7 +1053,7 @@ final class EditorScreen implements CharterApp.View {
         if (gr != null) return Keyframes.position(Keyframes.group(gr), 3);
         if (insp.tab == Inspector.LANE || insp.tab == Inspector.SCENE) {
             Lane7 l = d.lane(s.laneSel);
-            return l != null ? Keyframes.position(Keyframes.lane(l), 3) : null;
+            return l != null ? Keyframes.laneKeyed(l) : null;
         }
         if (insp.tab == Inspector.CAMERA) return Keyframes.camera(d);
         if (insp.tab == Inspector.VOLUME) {
@@ -1104,6 +1112,7 @@ final class EditorScreen implements CharterApp.View {
         if (im.click("kf", x, y, w, h)) keyframe();
     }
 
+    /** 新建漩涡 / 水帘: at the origin, from the playhead for {@link #VOL_BEATS} beats; it is selected. */
     void newVolume(boolean curtain) {
         newVolumeAt(curtain, 0f, 0f, 0f);
     }
@@ -1383,7 +1392,7 @@ final class EditorScreen implements CharterApp.View {
         boolean sceneOn = insp.tab == Inspector.SCENE;
         boolean overUi = im.inside(PV_COL_X, PV_COL_Y, PV_BTN_W, overlays ? (sceneOn ? 204f : 174f) : 54f)
             || overlays && (im.inside(CUBE_X, CUBE_Y, CUBE_BOX, CUBE_BOX + 28f)
-            || !SIDE && im.inside(PX + 12f, PY + 12f, 260f, 24f));
+            || !SIDE && im.inside(PX + 12f, PY + 12f, 260f, 24f)) || scene.overStrip();
         boolean inCanvas = im.hover(PX, PY, PW, PH) && !overUi && !curvesOver();
         if (inCanvas) sc.ray(im.mx, im.my, dir);
         Doc.DKey hot = inCanvas && drag == D_NONE && !sceneOn ? keyAt(im.mx, im.my) : null;
@@ -1399,7 +1408,7 @@ final class EditorScreen implements CharterApp.View {
         }
         if (overlays) keyGhosts();
         if (overlays) groupMark();
-        if (overlays && sceneOn) scene.draw(inCanvas && drag == D_NONE);
+        if (overlays && (sceneOn || insp.tab == Inspector.LANE)) scene.draw(inCanvas && drag == D_NONE);
         if (overlays && placing() && inCanvas && drag == D_NONE && hot == null) ghost();
         if (d.lanes.isEmpty()) {
             g.text("还没有轨道：在右边「轨道」页新建", PX + PW * 0.5f, PY + PH * 0.5f, 14, Gfx.INK3, 1);
@@ -1407,6 +1416,7 @@ final class EditorScreen implements CharterApp.View {
         im.popClip();
         g.stroke(PX, PY, PW, PH, 6f, 1f, Gfx.LINE);
         previewButtons(CUBE_X, CUBE_Y, PV_COL_X, PV_COL_Y);
+        scene.strip();
         if (im.modalOpen()) return;
         if (inCanvas && im.wheel != 0f && im.ctrl && im.alt) {      // Ctrl+Alt + the wheel: the editor's zoom
             orbitZoom = MathUtils.clamp(round2(orbitZoom * (float) Math.pow(1.1, -im.wheel)), 0.25f, 4f);
@@ -1515,7 +1525,7 @@ final class EditorScreen implements CharterApp.View {
             boolean out = s.groupIn != 0 && !d.within(l.g, s.groupIn);       // outside the entered group: faint
             if (real && !on && !hot) {                                  // the game draws it: its name only
                 Scene.at(lf, 0, lf[Scene.GND] - lf[Scene.GND_EXT], 0, p3, 0);
-                if (px3(p3, pa)) g.text(laneTag(l.id), pa[0], pa[1] + 12f, 11, Gfx.INK3, 1);
+                if (!laneHide && px3(p3, pa)) g.text(laneTag(l.id), pa[0], pa[1] + 12f, 11, Gfx.INK3, 1);
                 continue;
             }
             Color c = on ? Gfx.GND : hot ? Gfx.INK1 : Gfx.INK3;
@@ -1534,7 +1544,7 @@ final class EditorScreen implements CharterApp.View {
                     on ? 1f : 0.7f);
             }
             Scene.at(lf, 0, lo, 0, p3, 0);
-            if (overlays && px3(p3, pa)) {
+            if (overlays && !laneHide && px3(p3, pa)) {
                 g.text(laneTag(l.id), pa[0], pa[1] + 12f, 11, on ? Gfx.GND : Gfx.INK3, 1);
             }
         }
@@ -1652,16 +1662,16 @@ final class EditorScreen implements CharterApp.View {
 
     /**
      * 关键帧的影子 (Kelvin 2026-11-11 16:39, SPEC §3): while a lane, veil or curtain is selected, it at each of its
-     * keyframes in amber (a lane by its 底面), a label with each one's number and beat (two at one place share it:
-     * 「① 0 拍 · ④ 6 拍」) and the dashed path its 底面 or centre takes between them, arrows showing which way.
+     * keyframes in amber (a lane's whole box, faint, turned as it is there: Kelvin 2026-11-14「A可以」), a label with
+     * each one's number and beat (two at one place share it: 「① 0 拍 · ④ 6 拍」) and the dashed path its 底面 or
+     * centre takes between them, arrows showing which way.
      */
     private void keyGhosts() {
         Doc d = s.doc;
         Lane7 l = insp.tab == Inspector.LANE ? d.lane(s.laneSel) : null;
         Doc.DVol v = insp.tab == Inspector.VOLUME && l == null ? d.volByUid(s.volSel) : null;
         if (l == null && v == null) return;
-        float[] ts = Keyframes.points(l != null ? Keyframes.position(Keyframes.lane(l), 3)
-            : Keyframes.position(Keyframes.volume(v), 2));
+        float[] ts = Keyframes.points(l != null ? Keyframes.laneKeyed(l) : Keyframes.position(Keyframes.volume(v), 2));
         if (ts.length < 2 || ts.length > 64) return;
         float[] lf = new float[Scene.LF];
         double[] a = new double[3], b = new double[3];
@@ -1682,7 +1692,7 @@ final class EditorScreen implements CharterApp.View {
             }
             Scene.laneFrame(l, t, lf);
             if (Math.abs(lf[Scene.W]) < 0.5f) continue;
-            face(lf, lf[Scene.GND], Math.abs(lf[Scene.W]) * 0.5, Math.abs(lf[Scene.H]) * 0.5, Gfx.SYNC, 1.5f, 0.85f);
+            ghostBox(lf);
         }
         ArrayList<float[]> at = new ArrayList<>();                      // the labels
         ArrayList<StringBuilder> text = new ArrayList<>();
@@ -1709,6 +1719,32 @@ final class EditorScreen implements CharterApp.View {
             g.text(tx, p[0], p[1] + 18f, 11, Gfx.SYNC, 1);
         }
     }
+
+    /** A 路点's ghost: lane frame lf's box from its 底面 to its 天面, faint amber faces and amber edges. */
+    private void ghostBox(float[] lf) {
+        double hw = Math.abs(lf[Scene.W]) * 0.5, hd = Math.abs(lf[Scene.H]) * 0.5;
+        double[][] c = new double[8][3];
+        float[][] sp = new float[8][];
+        for (int i = 0; i < 8; i++) {                                   // bit 0 across, bit 1 deep, bit 2 up
+            Scene.at(lf, (i & 1) == 0 ? -hw : hw, (i & 4) == 0 ? lf[Scene.GND] : lf[Scene.SKY], (i & 2) == 0 ? -hd : hd,
+                c[i], 0);
+            float[] o = new float[2];
+            sp[i] = px3(c[i], o) ? o : null;
+        }
+        for (int[] f : BOX_FACES) {
+            float[] a = sp[f[0]], b = sp[f[1]], cc = sp[f[2]], d = sp[f[3]];
+            if (a == null || b == null || cc == null || d == null) continue;
+            g.tri(a[0], a[1], b[0], b[1], cc[0], cc[1], Gfx.SYNC, 0.07f);
+            g.tri(a[0], a[1], cc[0], cc[1], d[0], d[1], Gfx.SYNC, 0.07f);
+        }
+        for (int i = 0; i < 8; i++) {
+            for (int bit = 1; bit <= 4; bit <<= 1) if ((i & bit) == 0) line3(c[i], c[i | bit], 1.5f, Gfx.SYNC, 0.85f);
+        }
+    }
+
+    /** A box's six faces by its corners ({@link #ghostBox}). */
+    private static final int[][] BOX_FACES = {{0, 1, 3, 2}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 3, 7, 6}, {0, 2, 6, 4},
+        {1, 3, 7, 5}};
 
     /** Where the keyframe path is at beat t: lane l's 底面 centre, else volume v's centre. */
     private static void spot(Lane7 l, Doc.DVol v, float t, float[] lf, double[] out) {
@@ -1802,9 +1838,11 @@ final class EditorScreen implements CharterApp.View {
             12)) {
             showFake = !showFake;
         }
-        if (im.button("pv-names", colB, top + 150f, PV_BTN_W, 24f, "显示：" + (laneIds ? "编号" : "名称"), Im.NORMAL,
-            12)) {
-            laneIds = !laneIds;
+        if (im.button("pv-names", colB, top + 150f, PV_BTN_W, 24f,
+            "显示：" + (laneHide ? "隐藏" : laneIds ? "编号" : "名称"), Im.NORMAL, 12)) {
+            if (laneHide) laneIds = laneHide = false;                   // 隐藏 → 名称 → 编号 → 隐藏
+            else if (laneIds) laneHide = true;
+            else laneIds = true;
         }
         if (insp.tab == Inspector.SCENE) scene.gridButton(colB, top + 180f);
         viewCube(cubeX, cubeY);
@@ -2001,7 +2039,7 @@ final class EditorScreen implements CharterApp.View {
     private void pressPreview(Doc.DKey hot, int hotVol, int hotLane) {
         Doc d = s.doc;
         dMarked = false;
-        if (insp.tab == Inspector.SCENE && scene.press()) return;      // 方块, or the handle
+        if ((insp.tab == Inspector.SCENE || insp.tab == Inspector.LANE) && scene.press()) return;  // 方块, the handle
         float[] th = tool == T_SELECT ? tailHandle() : null;
         if (th != null && Math.hypot(th[0] - im.mx, th[1] - im.my) < 10f * TOUCH) {
             dKey = s.single();

@@ -19,6 +19,12 @@ import java.util.ArrayList;
  * a lane there as a box), 阵列, 镜像 and 成组; the preview's grid 「网格 100 ▾」 that boxes and drags snap to; the
  * handle on the picked group or lane (its arrows move it, the yellow ring turns a group, the white cube sizes it); the
  * 阵列 card's amber ghosts until 确定; Ctrl+D; and models: a group saved in the Charter folder, added to any chart.
+ *
+ * <p>工具条 (Kelvin 2026-11-14「A可以」, after the video she sent: 移动 / 旋转 / 缩放): at the foot of the preview while a
+ * lane (轨道页) or a group or lane (场景页) is picked, 移动 W (the handle above; on the 轨道 page dragging the lane as
+ * before), 旋转 E (three rings round its origin or centre, x red, y green, z blue, turning its 角度 R or its 旋转 by the
+ * 吸附 step, about the axes it is in (世界) or its own turned ones (自身)), 缩放 R (a lane's 宽 / 高 / 长 along its own
+ * axes, and the cube).
  */
 final class SceneTools {
     /** 网格: its steps (0: off) and the button's labels. */
@@ -31,6 +37,14 @@ final class SceneTools {
     private static final String[] RAIL = {"选择", "方块", "阵列", "镜像", "成组"};
     private static final Color AMBER = Gfx.BPM, RING = Gfx.SYNC;
     private static final Color[] AXIS_INK = {EditorScreen.AX_X, EditorScreen.AX_Y, EditorScreen.AX_Z};
+    /** 工具条: the handle's modes and their keys. */
+    static final String[] MODES = {"移动 W", "旋转 E", "缩放 R"};
+    /** 吸附 of the rings: whole degrees (关), or steps of 5°, 15°, 45° or 90°. */
+    static final float[] SNAPS = {0f, 5f, 15f, 45f, 90f};
+    static final String[] SNAP_LABELS = {"吸附 关", "吸附 5°", "吸附 15°", "吸附 45°", "吸附 90°"};
+    private static final String[] OWN_LABELS = {"世界", "自身"}, SIZE_NAMES = {"宽", "高", "长"};
+    /** 工具条: where it is (left, top from the preview's foot), how big. */
+    static final float STRIP_W = 536f, STRIP_H = 42f;
 
     private final EditorScreen ed;
     int gridIdx = 3;
@@ -39,8 +53,20 @@ final class SceneTools {
     int count = 12, axis = 1, centre, into;
     /** 阵列: 一行's step (x, y, z) and 一圈's whole turn (degrees). */
     float gapX = 300f, gapY, gapZ, total = 360f;
-    /** The handle being dragged: 0 none, 1–3 the x, y or z arrow, 4 the ring, 5 the cube. */
+    /**
+     * The handle being dragged: 0 none, 1–3 the x, y or z arrow, 4 a group's yellow ring, 5 the cube; 旋转 6–8 the x,
+     * y or z ring; 缩放 9–11 a lane's 宽, 高 or 长.
+     */
     int handle;
+    /** 工具条: 0 移动, 1 旋转, 2 缩放; the rings' 吸附 ({@link #SNAPS}); 自身 (the rings about its own axes) or 世界. */
+    int mode, snapIdx = 2;
+    boolean own;
+    /** A ring's drag: which (0 x, 1 y, 2 z), its axes at the press, a lane's axes before 角度, the angle shown. */
+    private int ring;
+    private final double[][] rAx = new double[3][3], oAx = new double[3][3], pressRing = new double[3][3];
+    private float[] plain;
+    private float shown, startAngle;
+    private final float[] sDir = new float[2], lf = new float[Scene.LF];
     private boolean marked, byMouse;
     private final float[] v0 = new float[6];
     private float s0, turned, lastAngle;
@@ -127,23 +153,33 @@ final class SceneTools {
 
     // ================================================================== drawing and input on the preview
 
-    /** Over the preview on the 场景 page: the 阵列 ghosts, the box 方块 would put, the handle. */
+    /**
+     * Over the preview on the 场景 page: the 阵列 ghosts, the box 方块 would put, the handle; on the 轨道 page the
+     * selected lane's rings (旋转) or sizes (缩放), its moves staying as they were.
+     */
     void draw(boolean free) {
-        if (arrayOn) ghosts();
-        if (ed.tool == EditorScreen.T_BOX && free) boxGhost();
-        if (ed.tool == EditorScreen.T_SELECT && !arrayOn) {
+        boolean scene = ed.insp.tab == Inspector.SCENE;
+        if (scene && arrayOn) ghosts();
+        if (scene && ed.tool == EditorScreen.T_BOX && free) boxGhost();
+        if (handleOn()) {
             drawHandle();
             if (free && handle == 0 && handleAt() != 0) ed.im.cursor(Cursor.SystemCursor.Hand);
         }
     }
 
-    /** A press on the preview on the 场景 page: 方块 puts a box; a press on the handle drags it. @return taken */
+    /** @return whether the handle is there: the 选择 tool; the 场景 page without 阵列, the 轨道 page in 旋转 or 缩放 */
+    private boolean handleOn() {
+        if (ed.tool != EditorScreen.T_SELECT) return false;
+        return ed.insp.tab == Inspector.SCENE ? !arrayOn : ed.insp.tab == Inspector.LANE && mode != 0;
+    }
+
+    /** A press on the preview (场景 or 轨道 page): 方块 puts a box; a press on the handle drags it. @return taken */
     boolean press() {
-        if (ed.tool == EditorScreen.T_BOX) {
+        if (ed.insp.tab == Inspector.SCENE && ed.tool == EditorScreen.T_BOX) {
             placeBox();
             return true;
         }
-        if (ed.tool != EditorScreen.T_SELECT || arrayOn) return false;
+        if (!handleOn()) return false;
         int h = handleAt();
         if (h == 0) return false;
         handle = h;
@@ -162,6 +198,27 @@ final class SceneTools {
             turned = 0f;
             lastAngle = (float) ringAngle();
             byMouse = Float.isNaN(lastAngle);
+        }
+        if (h >= 6 && h <= 8) {
+            ring = h - 6;
+            for (int j = 0; j < 3; j++) System.arraycopy(rAx[j], 0, pressRing[j], 0, 3);
+            Lane7 l = tKind == 2 ? ed.s.doc.lane(tId) : null;
+            plain = l != null ? new float[9] : null;
+            if (l != null) Doc.plainAxes(l, ed.beat, plain);
+            turned = shown = 0f;
+            lastAngle = startAngle = (float) ringTurn();
+            byMouse = Float.isNaN(lastAngle);
+        }
+        if (h >= 9) {                                                   // which way on screen the size grows
+            for (int i = 0; i < 3; i++) p[i] = tC[i] + oAx[h - 9][i] * tLen;
+            sDir[0] = sDir[1] = 0f;
+            if (ed.sc.project(p[0], p[1], p[2], pb, 0)) {
+                float dx = pb[0] - pa[0], dy = pb[1] - pa[1], n = (float) Math.hypot(dx, dy);
+                if (n > 1f) {
+                    sDir[0] = dx / n;
+                    sDir[1] = dy / n;
+                }
+            }
         }
         return true;
     }
@@ -192,6 +249,24 @@ final class SceneTools {
                 lastAngle = (float) a;
             }
             to[0] = Math.round(v0[0] - turned);                         // +R.y takes +x to −z: against the angle
+        } else if (handle >= 6 && handle <= 8) {                        // 旋转: whole 吸附 steps, from the press
+            if (byMouse) turned = (ed.im.mx - ed.im.pressX) * 0.5f;
+            else {
+                double a = ringTurn();
+                if (Double.isNaN(a)) return;
+                double da = a - lastAngle;
+                while (da > 180.0) da -= 360.0;
+                while (da < -180.0) da += 360.0;
+                turned += (float) da;
+                lastAngle = (float) a;
+            }
+            float st = SNAPS[snapIdx];
+            shown = st > 0f ? Math.round(turned / st) * st : Math.round(turned);
+            System.arraycopy(Doc.turnBy(new float[]{v0[0], v0[1], v0[2]}, ring, shown, own, plain), 0, to, 0, 3);
+        } else if (handle >= 9) {                                       // 缩放 one way: along it on screen
+            float f = (float) Math.exp(((ed.im.mx - ed.im.pressX) * sDir[0] + (ed.im.my - ed.im.pressY) * sDir[1])
+                / 200.0);
+            for (int i = 0; i < fs.length; i++) to[i] = Math.round(v0[i] * f);
         } else {
             float f = (float) Math.exp((ed.im.mx - ed.im.pressX) / 200.0);
             for (int i = 0; i < fs.length; i++) {
@@ -204,6 +279,10 @@ final class SceneTools {
         if (!marked) {
             marked = true;
             ed.s.mark();
+            if (handle >= 6) {                                          // 路点: the others keep their angle, size
+                Keyframes.Group[] all = keyed();
+                if (all != null) Keyframes.seed(all[handle <= 8 ? 1 : handle == 10 ? 3 : 2], all);
+            }
         }
         float t = ed.snap(ed.beat);
         for (int i = 0; i < fs.length; i++) if (fs[i].at(ed.beat) != to[i]) Doc.setAt(fs[i], t, to[i]);
@@ -224,12 +303,22 @@ final class SceneTools {
         if (tKind == 1) {
             Group7 g = d.group(tId);
             if (g == null) return null;
+            if (handle >= 6 && handle <= 8) return new Fn[]{g.R.x, g.R.y, g.R.z};
             return handle <= 3 ? new Fn[]{g.P.x, g.P.y, g.P.z} : handle == 4 ? new Fn[]{g.R.y} : new Fn[]{g.K};
         }
         Lane7 l = tKind == 2 ? d.lane(tId) : null;
         if (l == null) return null;
         if (handle <= 3) return new Fn[]{l.v.x, l.v.y, l.v.z};
+        if (handle >= 6 && handle <= 8) return new Fn[]{l.R.x, l.R.y, l.R.z};
+        if (handle >= 9) return handle == 9 ? new Fn[]{l.w} : handle == 10 ? new Fn[]{l.S} : new Fn[]{l.h};
         return handle == 5 ? new Fn[]{l.w, l.h, l.S, l.s, l.F, l.f} : null;
+    }
+
+    /** @return the target's 路点 rows (a lane's 位置 / 角度 / 大小, a group's 位置 / 旋转 / 缩放), null when it is gone */
+    private Keyframes.Group[] keyed() {
+        Doc d = ed.s.doc;
+        if (tKind == 1) return d.group(tId) != null ? Keyframes.position(Keyframes.group(d.group(tId)), 3) : null;
+        return tKind == 2 && d.lane(tId) != null ? Keyframes.laneKeyed(d.lane(tId)) : null;
     }
 
     /**
@@ -240,7 +329,7 @@ final class SceneTools {
         Session s = ed.s;
         Doc d = s.doc;
         float t = ed.beat;
-        Group7 gr = d.group(s.groupSel);
+        Group7 gr = ed.insp.tab == Inspector.LANE ? null : d.group(s.groupSel);  // the 轨道 page: its lane
         Lane7 l = gr == null ? d.lane(s.laneSel) : null;
         tKind = 0;
         if (gr == null && l == null) return false;
@@ -260,6 +349,14 @@ final class SceneTools {
         for (int j = 0; j < 3; j++) {
             for (int i = 0; i < 3; i++) tAx[j][i] = pp != null ? pp.m[3 * i + j] : i == j ? 1 : 0;
         }
+        Group7.Pose op = gr != null ? pose(gr.id) : null;               // its own axes: turned, as drawn
+        if (l != null) Scene.laneFrame(l, t, lf);
+        for (int j = 0; j < 3; j++) {
+            for (int i = 0; i < 3; i++) {
+                oAx[j][i] = l != null ? lf[Scene.A + 3 * j + i] : op != null ? op.m[3 * i + j] : i == j ? 1 : 0;
+                rAx[j][i] = own ? oAx[j][i] : tAx[j][i];
+            }
+        }
         double most = 0;
         for (int j = 0; j < 3; j++) {
             for (int i = 0; i < 3; i++) p[i] = tC[i] + tAx[j][i] * 100.0;
@@ -278,11 +375,29 @@ final class SceneTools {
         for (int i = 0; i < 3; i++) out[i] = tC[i] + tAx[0][i] * c + tAx[2][i] * s;
     }
 
-    /** The handle: three arrows along the axes of the group the target is in, a group's ring, the white cube. */
+    /**
+     * The handle: 移动 three arrows along the axes of the group the target is in, a group's ring, the white cube;
+     * 旋转 the three rings; 缩放 a lane's 宽 / 高 / 长 and the cube.
+     */
     private void drawHandle() {
         if (!target()) return;
         float cx = pa[0], cy = pa[1];
         Gfx g = ed.g;
+        if (mode == 1) {
+            rings(cx, cy);
+            return;
+        }
+        if (mode == 2) {
+            for (int j = 0; j < 3 && tKind == 2; j++) {
+                for (int i = 0; i < 3; i++) p[i] = tC[i] + oAx[j][i] * tLen;
+                ed.line3(tC, p, handle == 9 + j ? 4f : 3f, AXIS_INK[j], 0.95f);
+                if (!ed.sc.project(p[0], p[1], p[2], pb, 0)) continue;
+                g.rect(pb[0] - 5f, pb[1] - 5f, 10f, 10f, AXIS_INK[j]);
+                g.text(SIZE_NAMES[j], pb[0] + 9f, pb[1] - 9f, 12, AXIS_INK[j]);
+            }
+            g.rect(cx - 7f, cy - 7f, 14f, 14f, Color.WHITE);
+            return;
+        }
         if (tKind == 1) {
             double r = tLen * 0.7;
             double[] a = new double[3], b = new double[3];
@@ -306,13 +421,41 @@ final class SceneTools {
         g.rect(cx - 6f, cy - 6f, 12f, 12f, Color.WHITE);
     }
 
-    /** @return the handle under the pointer: 5 the cube, 1–3 an arrow, 4 the ring, 0 none */
+    /** @return the handle under the pointer: 5 the cube, 1–3 an arrow, 4 the ring, 6–8 a ring, 9–11 a size; 0 none */
     private int handleAt() {
         if (!target()) return 0;
         float mx = ed.im.mx, my = ed.im.my, cx = pa[0], cy = pa[1], touch = EditorScreen.TOUCH;
-        if (Math.abs(mx - cx) <= 8f * touch && Math.abs(my - cy) <= 8f * touch) return 5;
         int h = 0;
         float best = 9f * touch;
+        if (mode == 1) {
+            float[] a = new float[2];
+            for (int k = 0; k < 3; k++) {
+                for (int q2 = 0; q2 < 48; q2++) {
+                    ringPoint(rAx, k, q2, tLen, p);
+                    ringPoint(rAx, k, q2 + 1, tLen, q);
+                    if (!ed.sc.project(p[0], p[1], p[2], a, 0) || !ed.sc.project(q[0], q[1], q[2], pb, 0)) continue;
+                    float d = Scene.segDist(a[0], a[1], pb[0], pb[1], mx, my);
+                    if (d < best) {
+                        best = d;
+                        h = 6 + k;
+                    }
+                }
+            }
+            return h;
+        }
+        if (Math.abs(mx - cx) <= 8f * touch && Math.abs(my - cy) <= 8f * touch) return 5;
+        if (mode == 2) {
+            for (int j = 0; j < 3 && tKind == 2; j++) {
+                for (int i = 0; i < 3; i++) p[i] = tC[i] + oAx[j][i] * tLen * 1.12;
+                if (!ed.sc.project(p[0], p[1], p[2], pb, 0)) continue;
+                float d = Scene.segDist(cx, cy, pb[0], pb[1], mx, my);
+                if (d < best) {
+                    best = d;
+                    h = 9 + j;
+                }
+            }
+            return h;
+        }
         for (int j = 0; j < 3; j++) {
             for (int i = 0; i < 3; i++) p[i] = tC[i] + tAx[j][i] * tLen * 1.12;
             if (!ed.sc.project(p[0], p[1], p[2], pb, 0)) continue;
@@ -358,6 +501,137 @@ final class SceneTools {
         double x = hx * pressAx[0][0] + hy * pressAx[0][1] + hz * pressAx[0][2];
         double z = hx * pressAx[2][0] + hy * pressAx[2][1] + hz * pressAx[2][2];
         return Math.toDegrees(Math.atan2(z, x));
+    }
+
+    /**
+     * 旋转: the three rings round the centre (x red, y green, z blue); while one is dragged, the turn so far swept from
+     * where the drag began, its 吸附 ticks and a bubble with how far and where it is written.
+     */
+    private void rings(float cx, float cy) {
+        Gfx g = ed.g;
+        double[] a = new double[3], b = new double[3];
+        boolean dragging = handle >= 6 && handle <= 8;
+        for (int k = 0; k < 3; k++) {
+            boolean on = handle == 6 + k;
+            for (int q2 = 0; q2 < 48; q2++) {
+                ringPoint(rAx, k, q2, tLen, a);
+                ringPoint(rAx, k, q2 + 1, tLen, b);
+                ed.line3(a, b, on ? 3.5f : 2f, AXIS_INK[k], dragging && !on ? 0.3f : 0.9f);
+            }
+        }
+        g.disc(cx, cy, 5f, Color.WHITE);
+        if (!dragging) return;
+        Color c = AXIS_INK[ring];
+        float st = SNAPS[snapIdx], a0 = startAngle;
+        if (Float.isNaN(a0)) a0 = 0f;
+        int n = Math.max(2, (int) Math.ceil(Math.abs(shown) / 5f));
+        float[] e0 = new float[2], e1 = new float[2];
+        for (int i = 0; i < n; i++) {                                   // the sweep
+            pressPoint(a0 + shown * i / n, a);
+            pressPoint(a0 + shown * (i + 1) / n, b);
+            if (ed.sc.project(a[0], a[1], a[2], e0, 0) && ed.sc.project(b[0], b[1], b[2], e1, 0)) {
+                g.tri(cx, cy, e0[0], e0[1], e1[0], e1[1], c, 0.18f);
+            }
+        }
+        if (st > 0f && 360f / st <= 72f) {                              // the 吸附 steps
+            for (float t = 0f; t < 360f - 1e-3f; t += st) {
+                pressPoint(a0 + t, a);
+                if (ed.sc.project(a[0], a[1], a[2], e0, 0)) g.disc(e0[0], e0[1], 2.5f, c);
+            }
+        }
+        pressPoint(a0, a);
+        pressPoint(a0 + shown, b);
+        if (!ed.sc.project(a[0], a[1], a[2], e0, 0) || !ed.sc.project(b[0], b[1], b[2], e1, 0)) return;
+        g.line(cx, cy, e0[0], e0[1], 1.5f, c, 0.8f);
+        g.line(cx, cy, e1[0], e1[1], 2f, c, 1f);
+        boolean keyed = false;
+        Fn[] fs = fns();
+        for (int i = 0; fs != null && i < fs.length; i++) keyed |= !fs[i].segs.isEmpty();
+        String l1 = "绕 " + "xyz".charAt(ring) + " 转 " + Im.fmt(shown) + "°";
+        String l2 = (st > 0f ? "吸附 " + Im.fmt(st) + "°" : "吸附 关") + " · "
+            + (keyed ? "记在第 " + Im.fmt(ed.snap(ed.beat)) + " 拍" : "没有路点：一直是这个角度");
+        float w = Math.max(g.width(l1, 14), g.width(l2, 11)) + 24f, x = e1[0] + 18f, y = e1[1] + 18f;
+        g.box(x, y, w, 48f, 8f, Gfx.BAR, c);
+        g.text(l1, x + 12f, y + 16f, 14, c);
+        g.text(l2, x + 12f, y + 35f, 11, Gfx.INK2);
+    }
+
+    /** Point k of 48 round ring {@code ax} (0 x, 1 y, 2 z: in the plane of the other two axes of ax) into out. */
+    private void ringPoint(double[][] ax, int k, int q2, double r, double[] out) {
+        double an = Math.PI * 2.0 * q2 / 48.0, c = Math.cos(an) * r, s = Math.sin(an) * r;
+        double[] u = ax[(k + 1) % 3], w = ax[(k + 2) % 3];
+        for (int i = 0; i < 3; i++) out[i] = tC[i] + u[i] * c + w[i] * s;
+    }
+
+    /** The point at {@code deg} round the dragged ring as it was at the press, into out. */
+    private void pressPoint(float deg, double[] out) {
+        double an = Math.toRadians(deg), c = Math.cos(an) * tLen, s = Math.sin(an) * tLen;
+        double[] u = pressRing[(ring + 1) % 3], w = pressRing[(ring + 2) % 3];
+        for (int i = 0; i < 3; i++) out[i] = pressC[i] + u[i] * c + w[i] * s;
+    }
+
+    /**
+     * @return the pointer's angle round the dragged ring in its plane (degrees; a turn of +d about the ring's axis
+     *         adds d), NaN when the view runs along that plane
+     */
+    private double ringTurn() {
+        double[] n = pressRing[ring], u = pressRing[(ring + 1) % 3], w = pressRing[(ring + 2) % 3], e = ed.sc.eye;
+        double dn = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
+        if (Math.abs(dn) < 0.15) return Double.NaN;
+        double t = ((pressC[0] - e[0]) * n[0] + (pressC[1] - e[1]) * n[1] + (pressC[2] - e[2]) * n[2]) / dn;
+        double hx = e[0] + dir[0] * t - pressC[0], hy = e[1] + dir[1] * t - pressC[1];
+        double hz = e[2] + dir[2] * t - pressC[2];
+        return Math.toDegrees(Math.atan2(hx * w[0] + hy * w[1] + hz * w[2], hx * u[0] + hy * u[1] + hz * u[2]));
+    }
+
+    /** @return where ring k (0 x, 1 y, 2 z) is on screen at {@code deg}; null when there is none (the self-test) */
+    float[] ringOnScreen(int k, float deg) {
+        if (!target()) return null;
+        double an = Math.toRadians(deg), c = Math.cos(an) * tLen, s = Math.sin(an) * tLen;
+        double[] u = rAx[(k + 1) % 3], w = rAx[(k + 2) % 3];
+        for (int i = 0; i < 3; i++) p[i] = tC[i] + u[i] * c + w[i] * s;
+        return ed.sc.project(p[0], p[1], p[2], pb, 0) ? new float[]{pb[0], pb[1]} : null;
+    }
+
+    // ================================================================== 工具条
+
+    /** @return whether the 工具条 shows: a lane picked on the 轨道 page; a group or lane on the 场景 page (no 阵列) */
+    boolean stripOn() {
+        Session s = ed.s;
+        if (!ed.overlays) return false;
+        if (ed.insp.tab == Inspector.LANE) return s.doc.lane(s.laneSel) != null;
+        return ed.insp.tab == Inspector.SCENE && !arrayOn
+            && (s.doc.group(s.groupSel) != null || s.doc.lane(s.laneSel) != null);
+    }
+
+    /** @return whether the pointer is on the 工具条 */
+    boolean overStrip() {
+        return stripOn() && ed.im.inside(EditorScreen.PX + 12f, stripY(), STRIP_W, STRIP_H);
+    }
+
+    private static float stripY() {
+        return EditorScreen.PY + EditorScreen.PH - 12f - STRIP_H;
+    }
+
+    /** The 工具条 at the foot of the preview: 移动 W / 旋转 E / 缩放 R, the rings' 吸附, 世界 / 自身. */
+    void strip() {
+        if (!stripOn()) return;
+        float x = EditorScreen.PX + 12f, y = stripY(), bx = x + 6f, by = y + 6f;
+        ed.g.box(x, y, STRIP_W, STRIP_H, 10f, Gfx.BAR, Gfx.LINE);
+        for (int i = 0; i < 3; i++) {
+            if (ed.im.button("pv-mode" + i, bx, by, 84f, 30f, MODES[i], i == mode ? Im.ON : Im.NORMAL, 12)) {
+                setMode(i);
+            }
+            bx += 90f;
+        }
+        snapIdx = ed.im.dropdown("pv-snap", bx + 6f, by, 112f, 30f, SNAP_LABELS[snapIdx], SNAP_LABELS, snapIdx);
+        own = ed.im.segmented("pv-own", bx + 124f, by, 124f, 30f, OWN_LABELS, own ? 1 : 0) == 1;
+    }
+
+    /** W / E / R: the handle's mode, with the 选择 tool (where the handle is). */
+    void setMode(int m) {
+        mode = m;
+        if (ed.tool != EditorScreen.T_SELECT) ed.setTool(EditorScreen.T_SELECT);
     }
 
     /** @return where the handle's arrow h (1–3) is on screen, halfway along; null when there is none (the self-test) */

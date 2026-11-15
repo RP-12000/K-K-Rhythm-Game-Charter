@@ -10,6 +10,7 @@ import org.kelvinizer.elements.JudgementLine;
 import org.kelvinizer.elements.Key7;
 import org.kelvinizer.elements.KeyKind;
 import org.kelvinizer.elements.Lane7;
+import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.NoteDistortion;
 import org.kelvinizer.elements.NoteGlitch;
 import org.kelvinizer.elements.NoteTrail;
@@ -199,6 +200,7 @@ public final class Doc {
         c.g = l.g;
         copyFn3(l.u, c.u);
         copyFn3(l.n, c.n);
+        copyFn3(l.R, c.R);
         copyFn3(l.v, c.v);
         copyFn(l.w, c.w);
         copyFn(l.h, c.h);
@@ -246,10 +248,13 @@ public final class Doc {
         return l != null ? new ArrayList<>(l) : new ArrayList<>();
     }
 
-    /** @return every function of lane {@code l}: u x y z, v x y z, w, h, S, s, F, f, opacity o, n x y z, 水雷 m, 轨道本身 l */
+    /**
+     * @return every function of lane {@code l}: u x y z, v x y z, w, h, S, s, F, f, opacity o, n x y z, 水雷 m, 轨道本身 l,
+     *         角度 R x y z (chart 2.2)
+     */
     public static Fn[] fns(Lane7 l) {
         return new Fn[] {l.u.x, l.u.y, l.u.z, l.v.x, l.v.y, l.v.z, l.w, l.h, l.S, l.s, l.F, l.f, l.o,
-            l.n.x, l.n.y, l.n.z, l.m, l.l};
+            l.n.x, l.n.y, l.n.z, l.m, l.l, l.R.x, l.R.y, l.R.z};
     }
 
     // ================================================================== functions
@@ -904,7 +909,8 @@ public final class Doc {
         if (turn.turned) {
             for (Lane7 l : lanes) {
                 if (l.g != id) continue;
-                for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z}) {
+                for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z, l.R.x, l.R.y,
+                    l.R.z}) {
                     if (!f.segs.isEmpty()) return "组「" + groupLabel(g) + "」转过，里面的轨道「" + laneLabel(l.id)
                         + "」又在移动或转向：先把组的旋转改回 0 再解组";
                 }
@@ -923,13 +929,14 @@ public final class Doc {
         for (Lane7 l : lanes) {
             if (l.g != id) continue;
             if (turn.turned) {                                          // all of it fixed: turn it as the game did
-                l.axes(0f, a);
+                plainAxes(l, 0f, a);
                 turnInto(m, l.v.x.constant, l.v.y.constant, l.v.z.constant, q);
                 setConst(l.v, q[0] * k + cv[0], q[1] * k + cv[1], q[2] * k + cv[2]);
                 turnInto(m, l.u.x.constant, l.u.y.constant, l.u.z.constant, q);
                 setConst(l.u, q[0], q[1], q[2]);
                 turnInto(m, -a[6], -a[7], -a[8], q);                    // it faces where it faced: n = −depth
                 setConst(l.n, q[0], q[1], q[2]);
+                turnR(l, m);
             } else {
                 for (int i = 0; i < 3; i++) {
                     Fn f = i == 0 ? l.v.x : i == 1 ? l.v.y : l.v.z;
@@ -1112,8 +1119,8 @@ public final class Doc {
     /** @return why {@code it} cannot be turned ({@link #turn}): something in it moves or turns; null when it can */
     public String cannotTurn(Items it) {
         for (Lane7 l : it.lanes) {
-            for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z}) {
-                if (!f.segs.isEmpty()) return "轨道「" + laneLabel(l.id) + "」在移动或转向（原点、下落向量或法向量有分段），排不了一圈："
+            for (Fn f : new Fn[]{l.v.x, l.v.y, l.v.z, l.u.x, l.u.y, l.u.z, l.n.x, l.n.y, l.n.z, l.R.x, l.R.y, l.R.z}) {
+                if (!f.segs.isEmpty()) return "轨道「" + laneLabel(l.id) + "」在移动或转向（原点、下落向量、法向量或角度有分段），排不了一圈："
                     + "先选中它按 Ctrl+G 成组，再阵列这个组";
             }
         }
@@ -1133,13 +1140,14 @@ public final class Doc {
     public void turn(Items it, float[] m, float[] c) {
         float[] a = new float[9], q = new float[3];
         for (Lane7 l : it.lanes) {
-            l.axes(0f, a);
+            plainAxes(l, 0f, a);
             turnInto(m, l.v.x.constant - c[0], l.v.y.constant - c[1], l.v.z.constant - c[2], q);
             setConst(l.v, q[0] + c[0], q[1] + c[1], q[2] + c[2]);
             turnInto(m, l.u.x.constant, l.u.y.constant, l.u.z.constant, q);
             setConst(l.u, q[0], q[1], q[2]);
             turnInto(m, -a[6], -a[7], -a[8], q);                        // it faces where it faced: n = −depth
             setConst(l.n, q[0], q[1], q[2]);
+            turnR(l, m);
         }
         float[] both = new float[9];
         for (Group7 g : it.groups) {
@@ -1165,6 +1173,71 @@ public final class Doc {
         return new Group7.Pose(g, null).at(0f).m.clone();
     }
 
+    /** Lane l's axes at beat t from its fall u and normal n alone (as {@link Lane7#axes}, without its 角度 R), into a. */
+    static void plainAxes(Lane7 l, float t, float[] a) {
+        boolean f = l.facing();
+        LaneLayout.turn(l.u.x.at(t), l.u.y.at(t), l.u.z.at(t), f ? l.n.x.at(t) : 0f, f ? l.n.y.at(t) : 0f,
+            f ? l.n.z.at(t) : 0f, a);
+    }
+
+    /**
+     * Lane l's 角度 R (fixed, chart 2.2) when its u and n are turned by m about its origin: R becomes m·R·mᵀ, so the
+     * lane ends up turned by m as a whole.
+     */
+    private static void turnR(Lane7 l, float[] m) {
+        if (l.R.x.constant == 0f && l.R.y.constant == 0f && l.R.z.constant == 0f) return;
+        float[] q = new float[3];
+        euler(mul(mul(m, turnOf(l.R.x.constant, l.R.y.constant, l.R.z.constant)), tr(m)), q);
+        setConst(l.R, q[0], q[1], q[2]);
+    }
+
+    /** @return a·b, both 3 × 3 by rows */
+    static float[] mul(float[] a, float[] b) {
+        float[] o = new float[9];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                o[3 * i + j] = a[3 * i] * b[j] + a[3 * i + 1] * b[3 + j] + a[3 * i + 2] * b[6 + j];
+            }
+        }
+        return o;
+    }
+
+    /** @return m turned over (its transpose; for a turn, the turn back) */
+    static float[] tr(float[] m) {
+        return new float[]{m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]};
+    }
+
+    /**
+     * 转圈手柄 (Kelvin 2026-11-14「A可以」): angles r (a lane's 角度 R or a group's 旋转, degrees as {@link Group7#R})
+     * turned d degrees more about axis k (0 x, 1 y, 2 z) of the axes it is in, or with {@code own} about its own
+     * turned axes ({@code a}: a lane's axes before R, {@link #plainAxes}; null for a group). Where adding d to one
+     * angle does it (about y, or about the only axis it is turned about), it does that, so one drag can go round more
+     * than once; otherwise the angles nearest r. @return the new angles
+     */
+    static float[] turnBy(float[] r, int k, float d, boolean own, float[] a) {
+        float[] by = turnOf(k == 0 ? d : 0f, k == 1 ? d : 0f, k == 2 ? d : 0f), m0 = turnOf(r[0], r[1], r[2]);
+        float[] want = !own ? mul(by, m0) : a == null ? mul(m0, by) : mul(mul(m0, mul(tr(a), by)), a);
+        for (int c = 0; c < 3; c++) {
+            float[] t = r.clone();
+            t[c] = round3(t[c] + d);
+            float[] got = turnOf(t[0], t[1], t[2]);
+            boolean same = true;
+            for (int i = 0; i < 9 && same; i++) same = Math.abs(got[i] - want[i]) < 1e-4f;
+            if (same) return t;
+        }
+        float[] e1 = new float[3];
+        euler(want, e1);
+        float[] e2 = {180f - e1[0], e1[1] + 180f, e1[2] + 180f};
+        float d1 = 0f, d2 = 0f;
+        for (int i = 0; i < 3; i++) {
+            e1[i] = round3(e1[i] + 360f * Math.round((r[i] - e1[i]) / 360f));
+            e2[i] = round3(e2[i] + 360f * Math.round((r[i] - e2[i]) / 360f));
+            d1 += Math.abs(e1[i] - r[i]);
+            d2 += Math.abs(e2[i] - r[i]);
+        }
+        return d1 <= d2 ? e1 : e2;
+    }
+
     /** Mirrors {@code it} left ↔ right (x → −x in the axes of the group they are in), everything in its groups too. */
     public void mirror(Items it) {
         for (Lane7 l : it.lanes) flip(l);
@@ -1183,6 +1256,8 @@ public final class Doc {
         scale(l.v.x, -1f);
         scale(l.u.x, -1f);
         scale(l.n.x, -1f);
+        scale(l.R.y, -1f);                                              // 角度 R as a group's turn: y and z go back
+        scale(l.R.z, -1f);
     }
 
     /** Moves group g's centre to c (its group's axes) and what is right in it the other way, so nothing moves. */

@@ -12,10 +12,11 @@ import java.util.Arrays;
 
 /**
  * 关键帧（Kelvin 2026-11-11 16:39「基本可以」）：几个一起改的数（时间轴上的一行，或者「◇+ 关键帧」管的那些），在一拍加点、去点、挪点、改一段的缓动。
+ * 轨道的路点 = 位置 + 角度 + 大小（2026-11-14）。
  * Keyframes on the v7 segment functions (the chart format does not change): a {@link Group} is numbers edited
- * together, a row of the layered timeline (原点 v = its x, y and z) or what the 关键帧 button keys. A keyframe is where
- * a segment starts or ends. The 出现 / 消失 segments of a lane's width and of a volume's size are its life (the bar of
- * its layer), not keyframes, and a key's judge beat (where its h ends) never moves or goes here.
+ * together, a row of the layered timeline (位置 = a lane's origin v, its x, y and z) or what the 关键帧 button keys.
+ * A keyframe is where a segment starts or ends. The 出现 / 消失 segments of a lane's width and of a volume's size are
+ * its life (the bar of its layer), not keyframes, and a key's judge beat (where its h ends) never moves or goes here.
  */
 final class Keyframes {
     /** Beats closer than this are the same keyframe. */
@@ -46,16 +47,24 @@ final class Keyframes {
 
     // ================================================================== the groups of a thing
 
-    /** A lane's rows, in the timeline's order; the first three are its position (the 关键帧 button). */
-    static final String[] LANE_ROWS = {"原点 v", "下落向量 u", "宽长 a", "天面高度 S", "天面延申 s", "底面高度 F", "底面延申 f",
-        "透明度", "法向量 n", "水雷", "轨道本身"};
+    /**
+     * A lane's rows, in the timeline's order: 位置 (its origin v) and 角度 (its own turn R, chart 2.2) first (Kelvin
+     * 2026-11-14「A可以」); {@link #LANE_KEYED} are what the 关键帧 button keys.
+     */
+    static final String[] LANE_ROWS = {"位置", "角度", "下落向量 u", "宽长 a", "天面高度 S", "天面延申 s", "底面高度 F",
+        "底面延申 f", "透明度", "法向量 n", "水雷", "轨道本身"};
     /** Each row's numbers by their place in {@link Doc#fns(Lane7)}. */
-    private static final int[][] LANE_FNS = {{3, 4, 5}, {0, 1, 2}, {6, 7}, {8}, {9}, {10}, {11}, {12}, {13, 14, 15},
-        {16}, {17}};
+    private static final int[][] LANE_FNS = {{3, 4, 5}, {18, 19, 20}, {0, 1, 2}, {6, 7}, {8}, {9}, {10}, {11}, {12},
+        {13, 14, 15}, {16}, {17}};
+    /** A lane's 路点 (waypoint): 位置, 角度 and 大小 (宽长 a and its height, 天面高度 S), its rows by place. */
+    static final int[] LANE_KEYED = {0, 1, 3, 4};
     static final String[] VOL_ROWS = {"中心", "大小", "朝向", "模糊"};
     private static final int[][] VOL_FNS = {{3, 4, 5}, {0, 1, 2}, {6, 7, 8}, {9}};
 
-    /** @return lane l's groups: 原点 v, 下落向量 u, 宽长 a (its width's 出现 / 消失 are its life), S, s, F, f, 透明度, n, 水雷, 轨道本身 */
+    /**
+     * @return lane l's groups: 位置 v, 角度 R, 下落向量 u, 宽长 a (its width's 出现 / 消失 are its life), S, s, F, f, 透明度,
+     *         n, 水雷, 轨道本身
+     */
     static Group[] lane(Lane7 l) {
         Fn[] all = Doc.fns(l);
         Group[] out = new Group[LANE_ROWS.length];
@@ -71,6 +80,13 @@ final class Keyframes {
             }
             out[r] = new Group(LANE_ROWS[r], fs, ids, life, false);
         }
+        return out;
+    }
+
+    /** @return lane l's 路点 rows ({@link #LANE_KEYED}): what the 关键帧 button keys, its ghosts and its 路点 card */
+    static Group[] laneKeyed(Lane7 l) {
+        Group[] all = lane(l), out = new Group[LANE_KEYED.length];
+        for (int i = 0; i < out.length; i++) out[i] = all[LANE_KEYED[i]];
         return out;
     }
 
@@ -130,8 +146,8 @@ final class Keyframes {
     }
 
     /**
-     * What the 关键帧 button keys (SPEC §1): a lane's 原点 v, 下落向量 u and 宽长 a; the camera's P and 视角; a veil's or
-     * curtain's 中心 and 大小; a key's h.
+     * What the 关键帧 button keys (SPEC §1): the camera's P and 视角; a group's 位置, 旋转 and 缩放; a veil's or
+     * curtain's 中心 and 大小; a key's h (a lane's: {@link #laneKeyed}).
      */
     static Group[] position(Group[] all, int n) {
         return Arrays.copyOf(all, Math.min(n, all.length));
@@ -223,6 +239,14 @@ final class Keyframes {
     static boolean canAdd(Group g, float t) {
         for (int i = 0; i < g.fns.length; i++) if (addable(g, i, t)) return true;
         return false;
+    }
+
+    /**
+     * Before a change at one 路点 (a ring's turn, a field of the 路点 card): a keyframe on group gr at each 路点 of
+     * {@code all} where it has none (its value there stays), so the change stays at the one and the others keep theirs.
+     */
+    static void seed(Group gr, Group[] all) {
+        for (float b : points(all)) add(gr, b);
     }
 
     /** @return whether {@link #remove} would change something at beat t (a key's judge beat stays) */
